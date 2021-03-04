@@ -34,7 +34,7 @@ def rename_columns(data):
                          "conm": "company_name",
                          "div": "dividend_per_share",
                          "cshoc": "shares_outstanding",
-                         "cshtrd": "trading_volume",
+                         "cshtrd": "volume",
                          "eps": "current_eps",
                          "prccd": "price_close",
                          "prchd": "price_high",
@@ -55,7 +55,7 @@ def rename_columns(data):
     data = data[['GVKEY', 'date', 'ticker', 'cusip', 'company_name',
                  'daily_total_return_factor', 'adjustment_factor', 'price_close',
                  'price_open', 'price_high', 'price_low',
-                 'shares_outstanding', 'trading_volume', 'dividend_per_share', 'current_eps',
+                 'shares_outstanding', 'volume', 'dividend_per_share', 'current_eps',
                  'sector_name', 'sector', 'industry_group', 'industry', 'sub_industry',
                  'state', 'city', 'incorp_code', 'stock_exchg_code']]
 
@@ -95,11 +95,21 @@ def remove_companies_with_wrong_dates(data):
     return data
 
 
-def remove_companies_with_missing_returns(data):
-    # Drop the stocks that have zero record of total_return_index
-    return_index_len = data.groupby(['GVKEY'])['daily_total_return_factor'].count()
-    return_obs_mask = data['GVKEY'].isin(return_index_len.loc[return_index_len != 0].index)
+def remove_companies_with_missing_total_return_factors(data):
+    # Drop the stocks that have zero record of daily_total_return_factor
+    return_factor_len = data.groupby(['GVKEY'])['daily_total_return_factor'].count()
+    return_obs_mask = data['GVKEY'].isin(return_factor_len.loc[return_factor_len != 0].index)
     data = data.loc[return_obs_mask]
+
+    return data
+
+
+def remove_companies_with_missing_eps(data):
+    # Drop the stocks that have insufficient record of current eps
+    eps_len = data.groupby(['GVKEY'])['current_eps'].count()
+    expected_num_obs = eps_len.median()
+    eps_obs_mask = data['GVKEY'].isin(eps_len .loc[eps_len == expected_num_obs].index)
+    data = data.loc[eps_obs_mask]
 
     return data
 
@@ -134,22 +144,23 @@ def clean_crsp_data(data_path: Path, output_path: Path):
     # Get financials sector stocks only
     data = data[data['sector_name'] == 'financials']
 
-    # Drop dupes
     data.drop_duplicates(inplace=True)
 
     # Drop companies that have insufficient history or have duplicated dates
     data = remove_companies_with_wrong_dates(data)
 
-    # Drop the stocks that have zero record of total_return_index
-    data = remove_companies_with_missing_returns(data)
+    # Drop the stocks that have zero record of total_return_factor
+    data = remove_companies_with_missing_total_return_factors(data)
+
+    # Drop the stocks that have insufficient record of current eps
+    data = remove_companies_with_missing_eps(data)
 
     # Save the cleaned data to pickle file -- quicker to read
     data.to_pickle(output_path)
 
     end_time = datetime.now()
     run_time = end_time - start_time
-    print(run_time)
-    print(run_time.seconds)
+    print(f'{run_time.seconds} seconds')
     print("Data are cleaned")
 
 
