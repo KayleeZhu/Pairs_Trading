@@ -4,6 +4,17 @@ from pathlib import Path
 from datetime import datetime
 
 
+def convert_csv_to_pkl():
+    """
+    Read the csv data under data folder, convert the csv file to pkl file and save under data folder
+    """
+    csv_path = Path('../data/crsp_data.csv')
+    data = pd.read_csv(csv_path)
+
+    pkl_path = Path('../data/crsp_data.pkl')
+    data.to_pickle(pkl_path)
+
+
 def map_sector_code_to_name(data):
     # map sector code to sector name based on GICS standard
     sector_conditions = [data['gsector'] == 10,
@@ -33,6 +44,7 @@ def rename_columns(data):
                          "tic": "ticker",
                          "conm": "company_name",
                          "div": "dividend_per_share",
+                         "dvi": "annual_dividend",
                          "cshoc": "shares_outstanding",
                          "cshtrd": "volume",
                          "eps": "current_eps",
@@ -54,8 +66,8 @@ def rename_columns(data):
     # rearrange data columns
     data = data[['GVKEY', 'date', 'ticker', 'cusip', 'company_name',
                  'daily_total_return_factor', 'adjustment_factor', 'price_close',
-                 'price_open', 'price_high', 'price_low',
-                 'shares_outstanding', 'volume', 'dividend_per_share', 'current_eps',
+                 'price_open', 'price_high', 'price_low', 'shares_outstanding',
+                 'volume', 'dividend_per_share', 'annual_dividend', 'current_eps',
                  'sector_name', 'sector', 'industry_group', 'industry', 'sub_industry',
                  'state', 'city', 'incorp_code', 'stock_exchg_code']]
 
@@ -63,14 +75,8 @@ def rename_columns(data):
 
 
 def select_time_period(data, start_date, end_date):
-    """
-    :param data:
-    :param start_date:
-    :param end_date:
-    :return: return the data with the given time period
-    """
 
-    # Get the stocks that have historical data from 2010-2020 (10 years)
+    # Get the stocks that have historical data of the given time period
     start_date = datetime.strptime(start_date, '%Y-%m-%d')
     end_date = datetime.strptime(end_date, '%Y-%m-%d')
 
@@ -81,6 +87,14 @@ def select_time_period(data, start_date, end_date):
     # Only interested in the selected time period
     data = data[data['date'] >= start_date]
     data = data[data['date'] <= end_date]
+
+    return data
+
+
+def select_sectors(data, sectors_list):
+
+    sectors_mask = data['sector_name'].isin(sectors_list)
+    data = data.loc[sectors_mask]
 
     return data
 
@@ -104,6 +118,16 @@ def remove_companies_with_missing_total_return_factors(data):
     return data
 
 
+def remove_companies_with_missing_volumes(data):
+    # Drop the stocks that have insufficient record of volumes
+    vol_len = data.groupby(['GVKEY'])['volume'].count()
+    expected_num_obs = vol_len.median()
+    eps_obs_mask = data['GVKEY'].isin(vol_len .loc[vol_len == expected_num_obs].index)
+    data = data.loc[eps_obs_mask]
+
+    return data
+
+
 def remove_companies_with_missing_eps(data):
     # Drop the stocks that have insufficient record of current eps
     eps_len = data.groupby(['GVKEY'])['current_eps'].count()
@@ -114,17 +138,31 @@ def remove_companies_with_missing_eps(data):
     return data
 
 
-def clean_crsp_data(data_path: Path, output_path: Path):
+def remove_companies_with_missing_dividend(data):
+    # Drop the stocks that have insufficient record of current eps
+    div_len = data.groupby(['GVKEY'])['annual_dividend'].count()
+    expected_num_obs = div_len.median()
+    eps_obs_mask = data['GVKEY'].isin(div_len .loc[div_len == expected_num_obs].index)
+    data = data.loc[eps_obs_mask]
+
+    return data
+
+
+def clean_crsp_data(data_path: Path, output_path: Path, start_date: str, end_date: str, sectors_list: list):
     """
-    Function to clean and filter CRSP data
-    :param data_path: Path to original data
-    :param output_path: Path to save the output data
-    :return:
+
+    :param data_path: the path of the data we want to clean. The data is in pkl format
+    :param output_path: where we want to save the cleaned data
+    :param start_date: The start date of our targeted time period
+    :param end_date: The end date of our targeted time period
+    :param sectors_list: The list of sectors we are interested in
+    :return: The cleaned data
     """
+
     start_time = datetime.now()
     print("start cleaning data")
 
-    data = pd.read_csv(data_path)
+    data = pd.read_pickle(data_path)
 
     # Convert datadate column to datetime
     data['datadate'] = pd.to_datetime(data['datadate'], format='%Y/%m/%d')
@@ -139,12 +177,10 @@ def clean_crsp_data(data_path: Path, output_path: Path):
     data = rename_columns(data)
 
     # Get the data within the target period:
-    data = select_time_period(data, start_date='2010-01-04', end_date='2020-12-31')
+    data = select_time_period(data, start_date, end_date)
 
-    # Get financials sector stocks only
-    data = data[data['sector_name'] == 'financials']
-
-    data.drop_duplicates(inplace=True)
+    # Get the targeted sectors stocks
+    data = select_sectors(data, sectors_list)
 
     # Drop companies that have insufficient history or have duplicated dates
     data = remove_companies_with_wrong_dates(data)
@@ -152,8 +188,16 @@ def clean_crsp_data(data_path: Path, output_path: Path):
     # Drop the stocks that have zero record of total_return_factor
     data = remove_companies_with_missing_total_return_factors(data)
 
+    # Drop the stocks that have insufficient record of volume
+    data = remove_companies_with_missing_volumes(data)
+
     # Drop the stocks that have insufficient record of current eps
     data = remove_companies_with_missing_eps(data)
+
+    # Drop the stocks that have insufficient record of annual dividend
+    data = remove_companies_with_missing_dividend(data)
+
+    data.drop_duplicates(inplace=True)
 
     # Save the cleaned data to pickle file -- quicker to read
     data.to_pickle(output_path)
@@ -165,8 +209,15 @@ def clean_crsp_data(data_path: Path, output_path: Path):
 
 
 if __name__ == '__main__':
-    data_folder = Path('../data')
-    crsp_data = data_folder / Path('crsp_data.csv')
-    save_path = data_folder / Path('cleaned_data.pkl')
+    # convert_csv_to_pkl()
 
-    clean_crsp_data(crsp_data, save_path)
+    # Parameters Control:
+    data_folder = Path('../data')
+    crsp_data = data_folder / Path('crsp_data.pkl')
+    save_path = data_folder / Path('cleaned_data.pkl')
+    date_from = '2010-01-04'
+    date_to = '2020-12-31'
+    sectors = ['financials', 'health_care']
+
+    clean_crsp_data(data_path=crsp_data, output_path=save_path, start_date=date_from,
+                    end_date=date_to, sectors_list=sectors)
