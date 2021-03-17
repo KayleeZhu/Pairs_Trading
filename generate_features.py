@@ -6,8 +6,10 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 
-def calculate_returns(data):
-
+def calculate_daily_returns(data):
+    """
+    Calculate daily return of each stock
+    """
     data.sort_values(by=['GVKEY', 'date'], inplace=True)
 
     # Calculate adjusted price which encounter stock split & dividend
@@ -18,6 +20,44 @@ def calculate_returns(data):
 
     # Drop the rows where return is NA
     data.dropna(subset=['return'], inplace=True)
+    return data
+
+
+def calculate_cumulative_returns(data):
+    """
+    Calculate cumulative return of each stock
+    """
+
+    dt['return_factor'] = dt['return'] + 1
+    dt['cum_return'] = dt.groupby(['GVKEY'])['return_factor'].cumprod() - 1
+
+    # Drop the rows where return is NA
+    data.dropna(subset=['cum_return'], inplace=True)
+    return data
+
+
+def calculate_rolling_returns(data):
+    # Calculate rolling returns with 5 day windows
+    dt['roll_return'] = dt.groupby(['GVKEY'])['return_factor'].rolling(5).apply(lambda x: x.prod()) - 1
+
+    # Drop the rows where return is NA
+    data.dropna(subset=['roll_return'], inplace=True)
+    return data
+
+
+def calculate_correlation(data):
+    # Calculate the correlation matrix of the investment universe
+
+    return data
+
+
+def calculate_dividend_yield(data):
+    """
+    Calculate dividend yield of each stock
+    :param data: The DataFrame we need to work on which contains annual dividend and close price
+    :return: DataFrame with dividend_yield column
+    """
+    data.eval('dividend_yield = annual_dividend / price_close', inplace=True)
     return data
 
 
@@ -78,15 +118,13 @@ def get_all_features_for_pca(data, historical_days, features_list):
     return pd.concat(all_features_list, axis=1)
 
 
-def apply_pca(pca_features, num_components):
+def apply_pca(all_features, num_components):
     pca = PCA(num_components)
-    Xr = pca.fit(pca_features)
+    Xr = pca.fit(all_features)
     exp_ratio = Xr.explained_variance_ratio_
+    pca_features = Xr.transform(all_features)
 
-    results = Xr.transform(pca_features)  # TODO: rename this!
-    # TODO: convert this into DataFrame
-
-    return exp_ratio, results
+    return exp_ratio, pca_features
 
 
 def generate_pca_features_for_clustering(data, num_components, historical_days, features_list):
@@ -94,8 +132,17 @@ def generate_pca_features_for_clustering(data, num_components, historical_days, 
     start_time = datetime.now()
     print("start working on PCA")
 
-    pca_features = get_all_features_for_pca(data, historical_days, features_list)
-    exp_ratio, results = apply_pca(pca_features, num_components)
+    all_features = get_all_features_for_pca(data, historical_days, features_list)
+    exp_ratio, pca_features = apply_pca(all_features, num_components)
+
+    # Convert the pca features array into a DF:
+    pca_columns = []
+    for i in range(1, num_components+1):
+        pca_columns.append('pca' + str(i))
+    pca_features = pd.DataFrame(data=pca_features, index=all_features.index, columns=pca_columns)
+
+    # Join the PCA features to the original data
+    pca_features = pca_features.join(data)[pca_columns]
 
     # Recording time and notify user how well the PCA is doing
     end_time = datetime.now()
@@ -103,7 +150,7 @@ def generate_pca_features_for_clustering(data, num_components, historical_days, 
     print(f'{run_time.seconds} seconds')
     print(f"The explained variance ratio is: {exp_ratio}")
 
-    return exp_ratio, results
+    return pca_features, exp_ratio
 
 
 if __name__ == '__main__':
@@ -114,7 +161,12 @@ if __name__ == '__main__':
 
     data_path = Path('data/cleaned_data.pkl')
     dt = pd.read_pickle(data_path)
-    dt = calculate_returns(dt)
+    dt = calculate_daily_returns(dt)
+    dt = calculate_cumulative_returns(dt)
+    dt = calculate_rolling_returns(dt)
+    dt = calculate_dividend_yield(dt)
 
-    explained_ratio, pca_results = generate_pca_features_for_clustering(data=dt, num_components=10, historical_days=20,
-                                                                features_list=['return', 'volume', 'current_eps'])
+    # Parameters Control:
+    features = ['return', 'volume', 'current_eps']
+    pca_results, explained_ratio = generate_pca_features_for_clustering(data=dt, num_components=10, historical_days=20,
+                                                                        features_list=features)
