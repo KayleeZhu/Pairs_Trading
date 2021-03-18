@@ -28,8 +28,8 @@ def calculate_cumulative_returns(data):
     Calculate cumulative return of each stock
     """
 
-    dt['return_factor'] = dt['return'] + 1
-    dt['cum_return'] = dt.groupby(['GVKEY'])['return_factor'].cumprod() - 1
+    data['return_factor'] = data['return'] + 1
+    data['cum_return'] = data.groupby(['GVKEY'])['return_factor'].cumprod() - 1
 
     # Drop the rows where return is NA
     data.dropna(subset=['cum_return'], inplace=True)
@@ -38,7 +38,8 @@ def calculate_cumulative_returns(data):
 
 def calculate_rolling_returns(data):
     # Calculate rolling returns with 5 day windows
-    dt['roll_return'] = dt.groupby(['GVKEY'])['return_factor'].rolling(5).apply(lambda x: x.prod()) - 1
+    # TODO: This function is not working currently, need to fix
+    data['roll_return'] = data.groupby(['GVKEY'])['return_factor'].rolling(5).apply(lambda x: x.prod()) - 1
 
     # Drop the rows where return is NA
     data.dropna(subset=['roll_return'], inplace=True)
@@ -47,6 +48,7 @@ def calculate_rolling_returns(data):
 
 def calculate_correlation(data):
     # Calculate the correlation matrix of the investment universe
+    # TODO
 
     return data
 
@@ -58,6 +60,7 @@ def calculate_dividend_yield(data):
     :return: DataFrame with dividend_yield column
     """
     data.eval('dividend_yield = annual_dividend / price_close', inplace=True)
+    data.dropna(subset=['dividend_yield'], inplace=True)
     return data
 
 
@@ -132,6 +135,12 @@ def generate_pca_features_for_clustering(data, num_components, historical_days, 
     start_time = datetime.now()
     print("start working on PCA")
 
+    # TODO: Test if these functions are working
+    data = calculate_daily_returns(data)
+    data = calculate_cumulative_returns(data)
+    # dt = calculate_rolling_returns(dt)
+    data = calculate_dividend_yield(data)
+
     all_features = get_all_features_for_pca(data, historical_days, features_list)
     exp_ratio, pca_features = apply_pca(all_features, num_components)
 
@@ -142,6 +151,7 @@ def generate_pca_features_for_clustering(data, num_components, historical_days, 
     pca_features = pd.DataFrame(data=pca_features, index=all_features.index, columns=pca_columns)
 
     # Join the PCA features to the original data
+    pca_columns = ['GVKEY', 'date'] + pca_columns
     pca_features = pca_features.join(data)[pca_columns]
 
     # Recording time and notify user how well the PCA is doing
@@ -161,12 +171,8 @@ if __name__ == '__main__':
 
     data_path = Path('data/cleaned_data.pkl')
     dt = pd.read_pickle(data_path)
-    dt = calculate_daily_returns(dt)
-    dt = calculate_cumulative_returns(dt)
-    dt = calculate_rolling_returns(dt)
-    dt = calculate_dividend_yield(dt)
 
     # Parameters Control:
-    features = ['return', 'volume', 'current_eps']
+    feature_list = ['return', 'volume', 'current_eps']
     pca_results, explained_ratio = generate_pca_features_for_clustering(data=dt, num_components=10, historical_days=20,
-                                                                        features_list=features)
+                                                                        features_list=feature_list)
