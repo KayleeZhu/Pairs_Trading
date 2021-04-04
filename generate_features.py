@@ -132,13 +132,13 @@ def apply_pca(all_features, num_components):
 
 def generate_pca_features_for_clustering(data, num_components, historical_days, features_list):
 
-    start_time = datetime.now()
-    print("start working on PCA")
+    # start_time = datetime.now()
+    # print("start working on PCA")
 
     # TODO: Test if these functions are working
     data = calculate_daily_returns(data)
     data = calculate_cumulative_returns(data)
-    # dt = calculate_rolling_returns(dt)
+    # dt = calculate_rolling_returns(data)
     data = calculate_dividend_yield(data)
 
     all_features = get_all_features_for_pca(data, historical_days, features_list)
@@ -155,10 +155,11 @@ def generate_pca_features_for_clustering(data, num_components, historical_days, 
     pca_features = pca_features.join(data)[pca_columns]
 
     # Recording time and notify user how well the PCA is doing
-    end_time = datetime.now()
-    run_time = end_time - start_time
-    print(f'{run_time.seconds} seconds')
+    # end_time = datetime.now()
+    # run_time = end_time - start_time
+    # print(f'{run_time.seconds} seconds')
     print(f"The explained variance ratio is: {exp_ratio}")
+    print(f"The sum of explained ratio is: {exp_ratio.sum()}")
 
     return pca_features, exp_ratio
 
