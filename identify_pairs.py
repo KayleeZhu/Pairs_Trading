@@ -1,15 +1,13 @@
 import pandas as pd
-import numpy as np
 from pathlib import Path
 import datetime
 from itertools import combinations
 from joblib import Parallel, delayed
 
 import statsmodels
-import statsmodels.api as sm
-from statsmodels.tsa.stattools import coint, adfuller
+from statsmodels.tsa.stattools import coint
 
-import generate_features as fea
+import generate_pca_features as fea
 import asset_clustering as ac
 import functools
 
@@ -77,7 +75,6 @@ def loop_through_cluster_list(all_data, asset_cluster, training_date, num_traini
     true_pairs_list = []
     pairs_counter = 0
 
-    # TODO: parallelization on cluster
     for pairs_to_check in possible_pairs_list:
 
         pairs_counter_one_cluster = 0
@@ -91,6 +88,8 @@ def loop_through_cluster_list(all_data, asset_cluster, training_date, num_traini
             if p_value < significant_level:
                 true_pairs_list.append(coint_dict)
                 pairs_counter_one_cluster += 1
+
+            # TODO: Calculate Hurst Exponent as the second criteria for pairs selection
 
         print(
             f"cointegration test finished for {len(pairs_to_check)} possible pairs, "

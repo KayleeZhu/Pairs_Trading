@@ -1,7 +1,5 @@
 import pandas as pd
-import numpy as np
 from pathlib import Path
-from datetime import datetime
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
@@ -64,7 +62,7 @@ def calculate_dividend_yield(data):
     return data
 
 
-class Features:
+class PCAFeatures:
 
     def __init__(self, data, historical_days):
         self.data = data
@@ -107,7 +105,7 @@ class Features:
 
 def get_all_features_for_pca(data, historical_days, features_list):
 
-    fea = Features(data, historical_days)
+    fea = PCAFeatures(data, historical_days)
 
     # Get all the features that requested in the features_list
     all_features_list = []
@@ -174,6 +172,6 @@ if __name__ == '__main__':
     dt = pd.read_pickle(data_path)
 
     # Parameters Control:
-    feature_list = ['return', 'volume', 'current_eps']
-    pca_results, explained_ratio = generate_pca_features_for_clustering(data=dt, num_components=10, historical_days=20,
+    feature_list = ['return', 'cum_return', 'volume', 'current_eps', 'dividend_yield']
+    pca_results, explained_ratio = generate_pca_features_for_clustering(data=dt, num_components=4, historical_days=20,
                                                                         features_list=feature_list)
