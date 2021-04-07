@@ -183,6 +183,11 @@ class SpreadFeature:
                                             right_on=["date", "GVKEY_asset1", "GVKEY_asset2"])
         # Sort by date
         all_features.sort_values(by=['date', 'GVKEY_asset1'], inplace=True)
+
+        # Drop the rows where 5d spread return is missing -- date >= 2020-12-24
+        last_date = datetime.datetime.strptime('2020-12-24', '%Y-%m-%d')
+        data_with_pairs = data_with_pairs[data_with_pairs['date'] < last_date]
+
         return all_features
 
     def generate_label_y(self, upper_threshold_factor, lower_threshold_factor):
@@ -229,9 +234,12 @@ class SpreadFeature:
         # selected_column = ['date', 'GVKEY_asset1', 'GVKEY_asset2', 'y']
         # data_with_pairs = data_with_pairs[selected_column]
 
-        # Set self.y as labels
-        self.y = data_with_pairs
+        # Drop the rows where 5d spread return is missing -- date >= 2020-12-24
+        last_date = datetime.datetime.strptime('2020-12-24', '%Y-%m-%d')
+        data_with_pairs = data_with_pairs[data_with_pairs['date'] < last_date]
 
+        # Set self.y as labels & Return it
+        self.y = data_with_pairs
         return data_with_pairs
 
 
@@ -254,7 +262,7 @@ if __name__ == '__main__':
     # pairs_features.to_csv('pairs_test.csv')
     # print(pairs_features)
 
-    pairs_features = spread_features.generate_label_y(upper_threshold_factor=1.5, lower_threshold_factor=1.5)
+    pairs_features = spread_features.generate_label_y(upper_threshold_factor=1, lower_threshold_factor=1)
 
     X = spread_features.X
     y = spread_features.y
