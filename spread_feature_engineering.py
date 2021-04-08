@@ -210,6 +210,7 @@ class SpreadFeature:
         features_columns = ['GVKEY', 'date', 'adjusted_price']
         asset_data = self.all_data.copy()[features_columns]
         asset_data['adj_price_t5'] = asset_data.groupby(['GVKEY'])['adjusted_price'].shift(-5)
+        asset_data['adj_price_t3'] = asset_data.groupby(['GVKEY'])['adjusted_price'].shift(-3)
 
         # Add two helpful columns for CV
         asset_data['prediction_date'] = asset_data['date']
@@ -223,7 +224,9 @@ class SpreadFeature:
                                                 right_on=["date", "GVKEY"], suffixes=('_asset1', '_asset2'))
         # Calculate spread return
         data_with_pairs = data_with_pairs.eval('spread_t0 = adjusted_price_asset1 - adjusted_price_asset2')
+        data_with_pairs = data_with_pairs.eval('spread_t3 = adj_price_t3_asset1 - adj_price_t3_asset2')
         data_with_pairs = data_with_pairs.eval('spread_t5 = adj_price_t5_asset1 - adj_price_t5_asset2')
+        data_with_pairs = data_with_pairs.eval('spread_return_3d = (spread_t3 - spread_t0) / spread_t0')
         data_with_pairs = data_with_pairs.eval('spread_return_5d = (spread_t5 - spread_t0) / spread_t0')
 
         # Attach the spread return std info
@@ -235,10 +238,14 @@ class SpreadFeature:
         # Intuition: Assume today the spread is stable (that's why we didnt take action),
         # in 5 days if spread return is above threshold then long today
         # if spread return go down too much then we should short today
-        long_mask = data_with_pairs['spread_return_5d'] > upper_threshold_factor * data_with_pairs[
-                                                                                             'spread_return_60d_std']
-        short_mask = data_with_pairs['spread_return_5d'] < -lower_threshold_factor * data_with_pairs[
-                                                                                             'spread_return_60d_std']
+        long_mask = (data_with_pairs['spread_return_5d'] > upper_threshold_factor * data_with_pairs[
+            'spread_return_60d_std']) | (data_with_pairs['spread_return_3d'] > upper_threshold_factor * data_with_pairs[
+            'spread_return_60d_std'])
+
+        short_mask = (data_with_pairs['spread_return_5d'] < -lower_threshold_factor * data_with_pairs[
+            'spread_return_60d_std']) | (
+                                 data_with_pairs['spread_return_3d'] < -lower_threshold_factor * data_with_pairs[
+                             'spread_return_60d_std'])
         data_with_pairs['y'] = 0
         data_with_pairs.loc[long_mask, 'y'] = 1
         data_with_pairs.loc[short_mask, 'y'] = -1
@@ -281,12 +288,13 @@ if __name__ == '__main__':
     # pairs_features.to_csv('pairs_test.csv')
     # print(pairs_features)
 
-    pairs_features = spread_features.generate_label_y(upper_threshold_factor=1, lower_threshold_factor=1)
+    pairs_features = spread_features.generate_label_y(upper_threshold_factor=0.8, lower_threshold_factor=0.8)
 
     X = spread_features.X
     y = spread_features.y
     print(X)
     print(y)
+    print(y.groupby('y').count())
 
     y_csv_path = Path('data/pairs_label.csv')
     X_csv_path = Path('data/pairs_features.csv')
