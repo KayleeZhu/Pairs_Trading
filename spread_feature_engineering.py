@@ -129,7 +129,7 @@ class SpreadFeature:
         # Select the features columns only and keep the rows where there is pair
         data_with_pairs = data_with_pairs[selected_column]
         data_with_pairs = data_with_pairs.copy().dropna(subset=['GVKEY_asset2'])
-        data_with_pairs.sort_values(by=['date', 'GVKEY_asset1'], inplace=True)
+        data_with_pairs.sort_values(by=['date', 'GVKEY_asset1', 'GVKEY_asset2'], inplace=True)
 
         return data_with_pairs
 
@@ -165,6 +165,10 @@ class SpreadFeature:
                                                                                  'volume', 'dividend_yield'])
         spread_returns = self.get_spread_features_for_pairs()
 
+        # Add two helpful columns for CV
+        feature_one_asset['prediction_date'] = feature_one_asset['date']
+        feature_one_asset['evaluation_date'] = feature_one_asset.groupby(['GVKEY'])['date'].shift(-5)
+
         # Attach pairs info
         data_with_pairs = feature_one_asset.merge(self.pairs.copy(), how='left', left_on=["date", "GVKEY"],
                                                   right_on=["training_date", "asset1_gvkey"])
@@ -181,12 +185,18 @@ class SpreadFeature:
         all_features = spread_returns.merge(data_with_pairs.copy(), how='left',
                                             left_on=["date", "GVKEY_asset1", "GVKEY_asset2"],
                                             right_on=["date", "GVKEY_asset1", "GVKEY_asset2"])
-        # Sort by date
-        all_features.sort_values(by=['date', 'GVKEY_asset1'], inplace=True)
 
         # Drop the rows where 5d spread return is missing -- date >= 2020-12-24
         last_date = datetime.datetime.strptime('2020-12-24', '%Y-%m-%d')
-        data_with_pairs = data_with_pairs[data_with_pairs['date'] < last_date]
+        all_features = all_features[all_features['date'] < last_date]
+
+        # Drop & Rename columns
+        all_features = all_features.rename(columns={'prediction_date_asset1': 'prediction_date',
+                                                    'evaluation_date_asset1': 'evaluation_date'})
+        all_features = all_features.drop(columns=['date', 'prediction_date_asset2', 'evaluation_date_asset2'])
+
+        # Sort by date
+        all_features.sort_values(by=['prediction_date', 'GVKEY_asset1', 'GVKEY_asset2'], inplace=True)
 
         return all_features
 
@@ -200,6 +210,10 @@ class SpreadFeature:
         features_columns = ['GVKEY', 'date', 'adjusted_price']
         asset_data = self.all_data.copy()[features_columns]
         asset_data['adj_price_t5'] = asset_data.groupby(['GVKEY'])['adjusted_price'].shift(-5)
+
+        # Add two helpful columns for CV
+        asset_data['prediction_date'] = asset_data['date']
+        asset_data['evaluation_date'] = asset_data.groupby(['GVKEY'])['date'].shift(-5)
 
         # Attach pairs info
         data_with_pairs = asset_data.merge(self.pairs.copy(), how='left', left_on=["date", "GVKEY"],
@@ -229,14 +243,19 @@ class SpreadFeature:
         data_with_pairs.loc[long_mask, 'y'] = 1
         data_with_pairs.loc[short_mask, 'y'] = -1
 
-        # Drop columns
-        data_with_pairs = data_with_pairs.drop(columns=['training_date', 'asset1_gvkey', 'asset2_gvkey'])
-        # selected_column = ['date', 'GVKEY_asset1', 'GVKEY_asset2', 'y']
-        # data_with_pairs = data_with_pairs[selected_column]
+        # Drop & Rename columns 
+        # data_with_pairs = data_with_pairs.drop(columns=['training_date', 'asset1_gvkey', 'asset2_gvkey'])
+        data_with_pairs = data_with_pairs.rename(columns={'prediction_date_asset1': 'prediction_date',
+                                                          'evaluation_date_asset1': 'evaluation_date'})
+        selected_column = ['prediction_date', 'evaluation_date', 'GVKEY_asset1', 'GVKEY_asset2', 'y']
+        data_with_pairs = data_with_pairs[selected_column]
 
         # Drop the rows where 5d spread return is missing -- date >= 2020-12-24
         last_date = datetime.datetime.strptime('2020-12-24', '%Y-%m-%d')
-        data_with_pairs = data_with_pairs[data_with_pairs['date'] < last_date]
+        data_with_pairs = data_with_pairs[data_with_pairs['prediction_date'] < last_date]
+
+        # Sort by date
+        data_with_pairs.sort_values(by=['prediction_date', 'GVKEY_asset1', 'GVKEY_asset2'], inplace=True)
 
         # Set self.y as labels & Return it
         self.y = data_with_pairs
@@ -269,6 +288,12 @@ if __name__ == '__main__':
     print(X)
     print(y)
 
-    y.to_csv('pairs_label.csv')
-    X.to_csv('pairs_features.csv')
+    y_csv_path = Path('data/pairs_label.csv')
+    X_csv_path = Path('data/pairs_features.csv')
+    y_pkl_path = Path('data/pairs_label.pkl')
+    X_pkl_path = Path('data/pairs_features.pkl')
 
+    y.to_csv(y_csv_path)
+    X.to_csv(X_csv_path)
+    y.to_pickle(y_pkl_path)
+    X.to_pickle(X_pkl_path)
