@@ -229,6 +229,11 @@ class SpreadFeature:
         data_with_pairs = data_with_pairs.eval('spread_return_3d = (spread_t3 - spread_t0) / spread_t0')
         data_with_pairs = data_with_pairs.eval('spread_return_5d = (spread_t5 - spread_t0) / spread_t0')
 
+        # Flip the sign of return: If spread at t0 is negative, then the return should have an opposite sign
+        flip_mask = data_with_pairs['spread_t0'] < 0
+        data_with_pairs.loc[flip_mask, 'spread_return_3d'] = -data_with_pairs.loc[flip_mask, 'spread_return_3d']
+        data_with_pairs.loc[flip_mask, 'spread_return_5d'] = -data_with_pairs.loc[flip_mask, 'spread_return_5d']
+
         # Attach the spread return std info
         data_with_pairs = spread_return_std_data.merge(data_with_pairs.copy(), how='left',
                                                        left_on=["date", "GVKEY_asset1", "GVKEY_asset2"],
@@ -255,7 +260,7 @@ class SpreadFeature:
         data_with_pairs = data_with_pairs.rename(columns={'prediction_date_asset1': 'prediction_date',
                                                           'evaluation_date_asset1': 'evaluation_date'})
         selected_column = ['prediction_date', 'evaluation_date', 'GVKEY_asset1', 'GVKEY_asset2', 'y']
-        data_with_pairs = data_with_pairs[selected_column]
+        # data_with_pairs = data_with_pairs[selected_column]
 
         # Drop the rows where 5d spread return is missing -- date >= 2020-12-24
         last_date = datetime.datetime.strptime('2020-12-24', '%Y-%m-%d')
