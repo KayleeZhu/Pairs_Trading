@@ -140,7 +140,7 @@ def get_pairs_for_all_days(trading_date_beg, trading_date_end, all_data, feature
                                                       historical_days,
                                                       num_training_days,
                                                       significant_level)
-    pairs_for_all_day_list = Parallel(n_jobs=3)(delayed(partial_get_pairs_for_one_day)(trading_date) for trading_date in date_range)
+    pairs_for_all_day_list = Parallel(n_jobs=1)(delayed(partial_get_pairs_for_one_day)(trading_date) for trading_date in date_range)
     pairs_for_all_days_df = pd.concat(pairs_for_all_day_list, axis=0)
 
     # Save the pairs df to csv
