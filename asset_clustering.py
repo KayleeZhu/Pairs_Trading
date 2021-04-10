@@ -1,10 +1,8 @@
 import pandas as pd
-import numpy as np
 from pathlib import Path
-from datetime import datetime
 from sklearn.cluster import OPTICS
 from sklearn.neighbors import NearestNeighbors
-import generate_features as fea
+import generate_pca_features as fea
 
 
 class Cluster:
