@@ -112,12 +112,18 @@ class ModelPipeline:
         # Train the model
         self.pipeline.fit(X, y)
 
-    def get_prediction(self, X_data):
+    def get_prediction(self, X_data, y_data):
         # Drop non-features columns
         X = self.get_features(X_data)
 
-        # Return the predicted labels and prediction probabilities
-        return self.pipeline.predict(X), self.pipeline.predict_proba(X)
+        # Get predicted labels and prediction probabilities
+        y_pred = self.pipeline.predict(X)
+        prob = self.pipeline.predict_proba(X)
+
+        # Attach the prediction and prob to data
+        y_data['y_pred'] = y_pred
+        y_data[['prob_short', 'prob_hold', 'prob_long']] = prob
+        return y_data
 
 
 if __name__ == '__main__':
