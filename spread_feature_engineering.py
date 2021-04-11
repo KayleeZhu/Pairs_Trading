@@ -209,8 +209,11 @@ class SpreadFeature:
         # Get future 5 day's adjusted price
         features_columns = ['GVKEY', 'date', 'adjusted_price']
         asset_data = self.all_data.copy()[features_columns]
-        asset_data['adj_price_t5'] = asset_data.groupby(['GVKEY'])['adjusted_price'].shift(-5)
+        asset_data['adj_price_t1'] = asset_data.groupby(['GVKEY'])['adjusted_price'].shift(-1)
+        asset_data['adj_price_t2'] = asset_data.groupby(['GVKEY'])['adjusted_price'].shift(-2)
         asset_data['adj_price_t3'] = asset_data.groupby(['GVKEY'])['adjusted_price'].shift(-3)
+        asset_data['adj_price_t4'] = asset_data.groupby(['GVKEY'])['adjusted_price'].shift(-4)
+        asset_data['adj_price_t5'] = asset_data.groupby(['GVKEY'])['adjusted_price'].shift(-5)
 
         # Add two helpful columns for CV
         asset_data['prediction_date'] = asset_data['date']
@@ -222,17 +225,34 @@ class SpreadFeature:
         # Attach second asset info
         data_with_pairs = data_with_pairs.merge(asset_data.copy(), how='left', left_on=["date", "asset2_gvkey"],
                                                 right_on=["date", "GVKEY"], suffixes=('_asset1', '_asset2'))
-        # Calculate spread return
+
+        # Calculate spread & spread return from t0 - t5
         data_with_pairs = data_with_pairs.eval('spread_t0 = adjusted_price_asset1 - adjusted_price_asset2')
-        data_with_pairs = data_with_pairs.eval('spread_t3 = adj_price_t3_asset1 - adj_price_t3_asset2')
-        data_with_pairs = data_with_pairs.eval('spread_t5 = adj_price_t5_asset1 - adj_price_t5_asset2')
-        data_with_pairs = data_with_pairs.eval('spread_return_3d = (spread_t3 - spread_t0) / spread_t0')
-        data_with_pairs = data_with_pairs.eval('spread_return_5d = (spread_t5 - spread_t0) / spread_t0')
+        for i in range(1, 6):
+            price_1_col = 'adj_price_t' + str(i) + '_asset1'
+            price_2_col = 'adj_price_t' + str(i) + '_asset2'
+            spread_today = 'spread_t' + str(i)
+            spread_yesterday = 'spread_t' + str(i-1)
+            spread_daily_return_col = 'spread_daily_return_d' + str(i)
+            # Calculate spread
+            data_with_pairs[spread_today] = data_with_pairs[price_1_col] - data_with_pairs[price_2_col]
+            # Calculate spread daily return
+            data_with_pairs[spread_daily_return_col] = (data_with_pairs[spread_today] - data_with_pairs[
+                spread_yesterday]) / data_with_pairs[spread_yesterday].abs()
+
+             # Calculate cumulative returns
+            # data_with_pairs[spread_cum_return_col] = (data_with_pairs[spread_col] - data_with_pairs['spread_t0']) / \
+            #                                       data_with_pairs['spread_t0'].abs()
+
+        # data_with_pairs = data_with_pairs.eval('spread_t3 = adj_price_t3_asset1 - adj_price_t3_asset2')
+        # data_with_pairs = data_with_pairs.eval('spread_t5 = adj_price_t5_asset1 - adj_price_t5_asset2')
+        data_with_pairs = data_with_pairs.eval('spread_cum_return_3d = (spread_t3 - spread_t0) / abs(spread_t0)')
+        data_with_pairs = data_with_pairs.eval('spread_cum_return_5d = (spread_t5 - spread_t0) / abs(spread_t0)')
 
         # Flip the sign of return: If spread at t0 is negative, then the return should have an opposite sign
-        flip_mask = data_with_pairs['spread_t0'] < 0
-        data_with_pairs.loc[flip_mask, 'spread_return_3d'] = -data_with_pairs.loc[flip_mask, 'spread_return_3d']
-        data_with_pairs.loc[flip_mask, 'spread_return_5d'] = -data_with_pairs.loc[flip_mask, 'spread_return_5d']
+        # flip_mask = data_with_pairs['spread_t0'] < 0
+        # data_with_pairs.loc[flip_mask, 'spread_return_3d'] = -data_with_pairs.loc[flip_mask, 'spread_return_3d']
+        # data_with_pairs.loc[flip_mask, 'spread_return_5d'] = -data_with_pairs.loc[flip_mask, 'spread_return_5d']
 
         # Attach the spread return std info
         data_with_pairs = spread_return_std_data.merge(data_with_pairs.copy(), how='left',
@@ -243,13 +263,14 @@ class SpreadFeature:
         # Intuition: Assume today the spread is stable (that's why we didnt take action),
         # in 5 days if spread return is above threshold then long today
         # if spread return go down too much then we should short today
-        long_mask = (data_with_pairs['spread_return_5d'] > upper_threshold_factor * data_with_pairs[
-            'spread_return_60d_std']) | (data_with_pairs['spread_return_3d'] > upper_threshold_factor * data_with_pairs[
-            'spread_return_60d_std'])
-
-        short_mask = (data_with_pairs['spread_return_5d'] < -lower_threshold_factor * data_with_pairs[
+        long_mask = (data_with_pairs['spread_cum_return_5d'] > upper_threshold_factor * data_with_pairs[
             'spread_return_60d_std']) | (
-                                 data_with_pairs['spread_return_3d'] < -lower_threshold_factor * data_with_pairs[
+                                data_with_pairs['spread_cum_return_3d'] > upper_threshold_factor * data_with_pairs[
+                            'spread_return_60d_std'])
+
+        short_mask = (data_with_pairs['spread_cum_return_5d'] < -lower_threshold_factor * data_with_pairs[
+            'spread_return_60d_std']) | (
+                                 data_with_pairs['spread_cum_return_3d'] < -lower_threshold_factor * data_with_pairs[
                              'spread_return_60d_std'])
         data_with_pairs['y'] = 0
         data_with_pairs.loc[long_mask, 'y'] = 1
@@ -259,8 +280,10 @@ class SpreadFeature:
         # data_with_pairs = data_with_pairs.drop(columns=['training_date', 'asset1_gvkey', 'asset2_gvkey'])
         data_with_pairs = data_with_pairs.rename(columns={'prediction_date_asset1': 'prediction_date',
                                                           'evaluation_date_asset1': 'evaluation_date'})
-        selected_column = ['prediction_date', 'evaluation_date', 'GVKEY_asset1', 'GVKEY_asset2', 'spread_return_60d_std',
-                           'adjusted_price_asset1', 'adjusted_price_asset2', 'spread_t0', 'y']
+        selected_column = ['prediction_date', 'evaluation_date', 'GVKEY_asset1', 'GVKEY_asset2',
+                           'spread_t0', 'spread_t1', 'spread_t2', 'spread_t3', 'spread_t4', 'spread_t5',
+                           'spread_daily_return_d1', 'spread_daily_return_d2', 'spread_daily_return_d3',
+                           'spread_daily_return_d4', 'spread_daily_return_d5', 'y']
         data_with_pairs = data_with_pairs[selected_column]
 
         # Drop the rows where 5d spread return is missing -- date >= 2020-12-24
