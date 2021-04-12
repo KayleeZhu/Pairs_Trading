@@ -65,7 +65,9 @@ class ModelPipeline:
     def __init__(self, model_type, score_method):
         self.X_info_columns = ['GVKEY_asset1', 'GVKEY_asset2', 'prediction_date', 'evaluation_date']
         self.y_info_columns = ['prediction_date', 'evaluation_date', 'GVKEY_asset1', 'GVKEY_asset2',
-                               'spread_return_60d_std', 'adjusted_price_asset1', 'adjusted_price_asset2', 'spread_t0']
+                               'spread_t0', 'spread_t1', 'spread_t2', 'spread_t3', 'spread_t4', 'spread_t5',
+                               'spread_return_1d', 'spread_return_2d', 'spread_return_3d', 'spread_return_4d',
+                               'spread_return_5d']
         self.model_type = model_type
         self.score_method = score_method
 
