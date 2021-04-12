@@ -240,19 +240,8 @@ class SpreadFeature:
             data_with_pairs[spread_daily_return_col] = (data_with_pairs[spread_today] - data_with_pairs[
                 spread_yesterday]) / data_with_pairs[spread_yesterday].abs()
 
-             # Calculate cumulative returns
-            # data_with_pairs[spread_cum_return_col] = (data_with_pairs[spread_col] - data_with_pairs['spread_t0']) / \
-            #                                       data_with_pairs['spread_t0'].abs()
-
-        # data_with_pairs = data_with_pairs.eval('spread_t3 = adj_price_t3_asset1 - adj_price_t3_asset2')
-        # data_with_pairs = data_with_pairs.eval('spread_t5 = adj_price_t5_asset1 - adj_price_t5_asset2')
         data_with_pairs = data_with_pairs.eval('spread_cum_return_3d = (spread_t3 - spread_t0) / abs(spread_t0)')
         data_with_pairs = data_with_pairs.eval('spread_cum_return_5d = (spread_t5 - spread_t0) / abs(spread_t0)')
-
-        # Flip the sign of return: If spread at t0 is negative, then the return should have an opposite sign
-        # flip_mask = data_with_pairs['spread_t0'] < 0
-        # data_with_pairs.loc[flip_mask, 'spread_return_3d'] = -data_with_pairs.loc[flip_mask, 'spread_return_3d']
-        # data_with_pairs.loc[flip_mask, 'spread_return_5d'] = -data_with_pairs.loc[flip_mask, 'spread_return_5d']
 
         # Attach the spread return std info
         data_with_pairs = spread_return_std_data.merge(data_with_pairs.copy(), how='left',
