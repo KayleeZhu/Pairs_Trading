@@ -269,7 +269,7 @@ class SpreadFeature:
         # data_with_pairs = data_with_pairs.drop(columns=['training_date', 'asset1_gvkey', 'asset2_gvkey'])
         data_with_pairs = data_with_pairs.rename(columns={'prediction_date_asset1': 'prediction_date',
                                                           'evaluation_date_asset1': 'evaluation_date'})
-        selected_column = ['prediction_date', 'evaluation_date', 'GVKEY_asset1', 'GVKEY_asset2',
+        selected_column = ['prediction_date', 'evaluation_date', 'GVKEY_asset1', 'GVKEY_asset2', 'spread_return_60d_std',
                            'spread_t0', 'spread_t1', 'spread_t2', 'spread_t3', 'spread_t4', 'spread_t5',
                            'spread_daily_return_d1', 'spread_daily_return_d2', 'spread_daily_return_d3',
                            'spread_daily_return_d4', 'spread_daily_return_d5', 'y']

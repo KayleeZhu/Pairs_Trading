@@ -64,7 +64,7 @@ class ModelPipeline:
 
     def __init__(self, model_type, score_method):
         self.X_info_columns = ['GVKEY_asset1', 'GVKEY_asset2', 'prediction_date', 'evaluation_date']
-        self.y_info_columns = ['prediction_date', 'evaluation_date', 'GVKEY_asset1', 'GVKEY_asset2',
+        self.y_info_columns = ['prediction_date', 'evaluation_date', 'GVKEY_asset1', 'GVKEY_asset2', 'spread_return_60d_std',
                                'spread_t0', 'spread_t1', 'spread_t2', 'spread_t3', 'spread_t4', 'spread_t5',
                                'spread_return_1d', 'spread_return_2d', 'spread_return_3d', 'spread_return_4d',
                                'spread_return_5d']
@@ -139,7 +139,7 @@ if __name__ == '__main__':
 
     # Get spread features & label
     spread_features = spd.SpreadFeature(all_data=data, pairs=pairs_data)
-    pairs_features = spread_features.generate_label_y(upper_threshold_factor=1, lower_threshold_factor=1)
+    pairs_features = spread_features.generate_label_y(upper_threshold_factor=0.8, lower_threshold_factor=0.8)
 
     # Get features & labels data
     X, y = read_features_label_data()

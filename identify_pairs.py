@@ -39,7 +39,6 @@ def get_possible_pairs_for_each_cluster(asset_cluster):
 
 
 def cointegration_test_for_one_pair(all_data, one_pair_of_asset, training_date, num_training_days):
-
     # Get the correct time range
     ending_date = training_date
     beginning_date = datetime.datetime.strftime(
@@ -101,8 +100,7 @@ def loop_through_cluster_list(all_data, asset_cluster, training_date, num_traini
 
 
 def get_pairs_for_one_trading_day(all_data, features_list, num_components, historical_days,
-                                   num_training_days, significant_level, trading_date):
-
+                                  num_training_days, significant_level, trading_date):
     # Generate features
     pca_for_the_date, explained_ratio = fea.generate_pca_features_for_clustering(all_data, num_components,
                                                                                  historical_days, features_list)
@@ -118,7 +116,7 @@ def get_pairs_for_one_trading_day(all_data, features_list, num_components, histo
 
 
 def get_pairs_for_all_days(trading_date_beg, trading_date_end, all_data, features_list, num_components,
-                               historical_days, num_training_days, significant_level=0.05):
+                           historical_days, num_training_days, significant_level=0.05):
     """ Find pairs for all the trading days within the range
         Return a dictionary where key is the trading day and value is the list of all pairs for the day
     """
@@ -140,7 +138,8 @@ def get_pairs_for_all_days(trading_date_beg, trading_date_end, all_data, feature
                                                       historical_days,
                                                       num_training_days,
                                                       significant_level)
-    pairs_for_all_day_list = Parallel(n_jobs=1)(delayed(partial_get_pairs_for_one_day)(trading_date) for trading_date in date_range)
+    pairs_for_all_day_list = Parallel(n_jobs=1)(
+        delayed(partial_get_pairs_for_one_day)(trading_date) for trading_date in date_range)
     pairs_for_all_days_df = pd.concat(pairs_for_all_day_list, axis=0)
 
     # Save the pairs df to csv
@@ -156,7 +155,6 @@ def get_pairs_for_all_days(trading_date_beg, trading_date_end, all_data, feature
 
 
 if __name__ == '__main__':
-
     data_path = Path('data/cleaned_data.pkl')
     data = pd.read_pickle(data_path)
 
@@ -164,15 +162,15 @@ if __name__ == '__main__':
     feature_list = ['return', 'cum_return', 'volume', 'current_eps', 'dividend_yield']
     pca_components = 4
     historical_days = 20
-    # trade_date = datetime.datetime.strptime('2020-12-31', '%Y-%m-%d')
+    trade_date = datetime.datetime.strptime('2020-12-31', '%Y-%m-%d')
+    pairs_of_the_day = get_pairs_for_one_trading_day(all_data=data, features_list=feature_list,
+                                                     num_components=pca_components,
+                                                     historical_days=20, num_training_days=120, significant_level=0.01,
+                                                     trading_date=trade_date)
+    print(pairs_of_the_day)
 
-    # pairs_of_the_day = get_pairs_for_one_trading_day(all_data=data, features_list=feature_list, num_components=pca_components,
-    #                                               historical_days=20, num_training_days=120, significant_level=0.01, trading_date=trade_date)
-
-    # print(pairs_of_the_day)
-    #
     # Get all pairs
     all_pairs = get_pairs_for_all_days(trading_date_beg='2011-01-04', trading_date_end='2020-12-31',
-                                                  all_data=data, features_list=feature_list, num_components=pca_components,
-                                                  historical_days=20, num_training_days=120, significant_level=0.01)
+                                       all_data=data, features_list=feature_list, num_components=pca_components,
+                                       historical_days=20, num_training_days=120, significant_level=0.01)
     print(all_pairs)
