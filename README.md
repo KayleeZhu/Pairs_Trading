@@ -1,9 +1,9 @@
 # Pairs Trading
 
-Introduction: 
+## Introduction：
 This project implements stocks pairs trading strategy with Machine Learning Application in finding pairs, and predicting spread of pairs
 
-
+## Steps：
 1. Calculate Returns 
 2. Use PCA to generate features
 3. Cluster Assets with Optics
