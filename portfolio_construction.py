@@ -18,6 +18,11 @@ class EqualWeight(PortfolioOptimizer):
         return np.full(n, 1/n)
 
 
+class MarketValueWeight(PortfolioOptimizer):
+    def get_weights(self, portfolio_data: pd.DataFrame) -> np.array:
+        return portfolio_data['market_cap'] / portfolio_data['market_cap'].sum()
+
+
 class InverseVolatility(PortfolioOptimizer):
     def get_weights(self, volatility_series: pd.Series) -> np.array:
         volatility = volatility_series.to_numpy()
@@ -52,9 +57,10 @@ class EqualRiskContribution(PortfolioOptimizer):
         return optimal_x / sum(optimal_x)
 
 
-# class MeanVariance(PortfolioOptimizer):
-#     def get_weights(self, expected_return: np.array, covariance: np.matrix) -> np.array:
-#
+class MeanVariance(PortfolioOptimizer):
+    def get_weights(self, expected_return: np.array, covariance: np.matrix) -> np.array:
+        # TODO: Need to finish this part
+        pass
 
 
 def find_optimal_portfolio_weights(portfolio_data: pd.DataFrame, optimization_type: str):
@@ -69,6 +75,10 @@ def find_optimal_portfolio_weights(portfolio_data: pd.DataFrame, optimization_ty
         optimizer = EqualWeight()
         optimal_weights = optimizer.get_weights(portfolio_data['security_id'])
 
+    elif optimization_type == 'market_value_weighted':
+        optimizer = MarketValueWeight()
+        optimal_weights = optimizer.get_weights(portfolio_data['security_id'])
+
     elif optimization_type == 'inverse_volatility_weighted':
         optimizer = InverseVolatility()
         # Get the assets volatility series -> calculated by std of  daily return in the past half year
@@ -80,71 +90,9 @@ def find_optimal_portfolio_weights(portfolio_data: pd.DataFrame, optimization_ty
         covariance = optimizer.calculate_covariance_matrix(portfolio_data)
         optimal_weights = optimizer.get_weights(covariance)
 
-    # elif optimization_type == 'mean_variance':
-    #     optimizer = MeanVariance()
-    #     optimal_weights = optimizer.get_weights()
+    elif optimization_type == 'mean_variance':
+        optimizer = MeanVariance()
+        optimal_weights = optimizer.get_weights()
 
     # Create a new column and assign portfolio weights
     portfolio_data['weights'] = optimal_weights
-
-#
-# class PortfolioConstructor:
-#     """ This object provides 4 types of portfolio construction methods
-#         1. Equally Weighted Portfolio
-#         2. Market Value Weighted Portfolio
-#         3. Minimum Variance
-#         4. Risk Parity
-#             4.1 Naive Risk Parity (Inverse Volatility Weighted)
-#             4.2 Equal Risk Contribution
-#             4.3 Maximum Diversification
-#     """
-#
-#     def __init__(self, data: pd.DataFrame):
-#         """
-#         data: {DataFrame} which must contain following columns:
-#            - date
-#            - security_id
-#            - market_cap
-#            - daily_return
-#         """
-#         self.portfolio = data.copy()
-#
-#     def check_portfolio_data_columns(self):
-#         # TODO: check if this method works? Or come up a better way to handle the check
-#         if self.portfolio.columns.isin(['date', 'security_id', 'market_cap', 'daily_return']):
-#             print("Columns requirement is satisfied")
-#         else:
-#             print("Please include all needed columns in the portfolio DataFrame")
-#
-#     def equally_weighted(self, rebal_frequency='daily'):
-#         if rebal_frequency == 'daily':
-#             self.portfolio['weight'] = 1 / self.portfolio.groupby('date')['security_id'].count()
-#
-#     def market_value_weighted(self, rebal_frequency='daily'):
-#         if rebal_frequency == 'daily':
-#             self.portfolio['weight'] = self.portfolio['market_cap'] / self.portfolio.groupby('date')['market_cap'].sum()
-
-    # TODO: solve the minimum_variance portfolio
-    # def minimum_variance(self, rebal_frequency='daily'):
-
-    # def inverse_volatility_weighted(self, rebal_frequency='daily'):
-    #     # This method will be the same as ERC if all assets correlation are 1
-    #     if rebal_frequency == 'daily':
-    #         self.portfolio['volatility'] = self.portfolio.groupby('security_id')['daily_return'].apply(
-    #             lambda x: x.rolling(126).std())
-    #         self.portfolio['inverse_vol'] = 1 / self.portfolio['volatility']
-    #         self.portfolio['weight'] = self.portfolio['inverse_vol'] / self.portfolio.groupby('date')[
-    #             'inverse_vol'].sum()
-    #         # Drop the intermediate column
-    #         self.portfolio = self.portfolio.drop(columns='inverse_vol')
-    #
-    # def equal_risk_contribution(self):
-    #     # Take into account when assets correlation are not 1
-    #     n = self.portfolio.groupby('date')['security_id'].count()
-    #     covariance = self.calculate_covariance_matrix()
-    #     def object(x):
-    #         1/2 * np.transpose(x) * covariance * x - 1/n * np.log(x).sum()
-    #
-    #     optimal_x = minimize(object, np.array([0.1])).x[0]
-    #     optimal_w = optimal_x / optimal_x.sum()
-    #
