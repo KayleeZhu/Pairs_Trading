@@ -2,7 +2,7 @@ import pandas as pd
 from pathlib import Path
 from sklearn.cluster import OPTICS
 from sklearn.cluster import KMeans
-import generate_pca_features as fea
+import pca_feature_engineering as fea
 
 
 class Cluster:
