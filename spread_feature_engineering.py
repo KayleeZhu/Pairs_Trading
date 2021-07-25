@@ -3,9 +3,7 @@ from pathlib import Path
 import numpy as np
 import datetime
 
-import generate_pca_features as pca_fea
-import asset_clustering as ac
-import identify_pairs as ip
+import pca_feature_engineering as pca_fea
 
 
 def get_crsp_data(read_path):
@@ -289,10 +287,10 @@ class SpreadFeature:
 
 if __name__ == '__main__':
     # Get all_data & pairs data
-    data_path = Path('data/cleaned_data.pkl')
+    data_path = Path('cleaned_data.pkl')
     data = get_crsp_data(data_path)
 
-    pairs_path = Path('data/pairs_for_all_days.pkl')
+    pairs_path = Path('pairs_for_all_days.pkl')
     pairs_data = get_pairs_data(pairs_path)
 
     spread_features = SpreadFeature(all_data=data, pairs=pairs_data)
