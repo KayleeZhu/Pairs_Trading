@@ -3,13 +3,14 @@ from pathlib import Path
 import datetime
 from itertools import combinations
 from joblib import Parallel, delayed
+import functools
 
 import statsmodels
 from statsmodels.tsa.stattools import coint
 
 import pca_feature_engineering as fea
 import asset_clustering as ac
-import functools
+import CONFIG
 
 
 def get_cluster_list(asset_cluster):
@@ -143,7 +144,7 @@ def get_pairs_for_all_days(trading_date_beg, trading_date_end, all_data, feature
     pairs_for_all_days_df = pd.concat(pairs_for_all_day_list, axis=0)
 
     # Save the pairs df to csv
-    save_path = Path('data/pairs_for_all_days.pkl')
+    save_path = Path(f'data/pairs_for_all_days_{CONFIG.sectors_num}_sectors.pkl')
     pairs_for_all_days_df.to_pickle(save_path)
 
     # Record run time
@@ -155,22 +156,21 @@ def get_pairs_for_all_days(trading_date_beg, trading_date_end, all_data, feature
 
 
 if __name__ == '__main__':
-    data_path = Path('data/cleaned_data.pkl')
+    data_path = Path(f'data/cleaned_data_{CONFIG.sectors_num}_sectors.pkl')
     data = pd.read_pickle(data_path)
 
     # Generate features
     feature_list = ['return', 'cum_return', 'volume', 'current_eps', 'dividend_yield']
     pca_components = 4
     historical_days = 20
-    trade_date = datetime.datetime.strptime('2020-12-31', '%Y-%m-%d')
     pairs_of_the_day = get_pairs_for_one_trading_day(all_data=data, features_list=feature_list,
                                                      num_components=pca_components,
                                                      historical_days=20, num_training_days=120, significant_level=0.01,
-                                                     trading_date=trade_date)
+                                                     trading_date='2020-12-31')
     print(pairs_of_the_day)
 
     # Get all pairs
     all_pairs = get_pairs_for_all_days(trading_date_beg='2011-01-04', trading_date_end='2020-12-31',
                                        all_data=data, features_list=feature_list, num_components=pca_components,
-                                       historical_days=20, num_training_days=120, significant_level=0.01)
+                                       historical_days=20, num_training_days=120, significant_level=0.05)
     print(all_pairs)

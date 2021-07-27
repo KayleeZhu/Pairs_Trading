@@ -4,6 +4,8 @@ from sklearn.cluster import OPTICS
 from sklearn.cluster import KMeans
 import pca_feature_engineering as fea
 
+import CONFIG
+
 
 class Cluster:
 
@@ -50,7 +52,7 @@ class Cluster:
 
 if __name__ == '__main__':
 
-    data_path = Path('data/cleaned_data.pkl')
+    data_path = Path(f'data/cleaned_data_{CONFIG.sectors_num}_sectors.pkl')
     dt = pd.read_pickle(data_path)
 
     # Parameters Control --> Get PCA features for clustering

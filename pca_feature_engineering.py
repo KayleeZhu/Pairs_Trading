@@ -3,6 +3,8 @@ from pathlib import Path
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
+import CONFIG
+
 
 def calculate_daily_returns(data):
     """
@@ -168,7 +170,7 @@ if __name__ == '__main__':
     # Please run data_cleaning.py first to the cleaned data
     # Drag the clean_data.pkl file under "data" folder
 
-    data_path = Path('data/cleaned_data.pkl')
+    data_path = Path(f'data/cleaned_data_{CONFIG.sectors_num}_sectors.pkl')
     dt = pd.read_pickle(data_path)
 
     # Parameters Control:
