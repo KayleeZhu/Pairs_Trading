@@ -35,43 +35,87 @@ def get_train_val_indices(data):
     return fold_indices
 
 
-def get_parameter_distribution():
+def get_parameter_distribution(dict_num):
     # Define a dictionary of parameters for each model
 
     param_dist = {
-        'logistic': {'classifier__penalty': ['l2', 'none'],
-                     'classifier__dual': [True, False],
-                     'classifier__C': np.arange(0.5, 5, 0.5),
-                     'classifier__multi_class': ['auto', 'ovr', 'multinomial']
-                     },
-        'decision_tree': {'classifier__criterion': ['gini', 'entropy'],
-                          'classifier__splitter': ['best', 'random'],
-                          'classifier__max_depth': np.arange(5, 25, 1),
-                          'classifier__min_samples_split': np.arange(2, 10, 1),
-                          'classifier__min_samples_leaf': np.arange(2, 20, 1)
-                          },
-        'random_forest': {'classifier__n_estimators': np.arange(50, 250, 5),
-                          'classifier__criterion': ['gini', 'entropy'],
-                          'classifier__max_depth': np.arange(5, 25, 1),
-                          'classifier__min_samples_split': np.arange(2, 10, 1),
-                          'classifier__min_samples_leaf': np.arange(2, 20, 1)
-                          }
+        1: {'logistic': {'classifier__penalty': ['l2', 'none'],
+                         'classifier__dual': [True, False],
+                         'classifier__C': np.arange(0.5, 5, 0.5),
+                         'classifier__multi_class': ['auto', 'ovr', 'multinomial']
+                         },
+            'decision_tree': {'classifier__criterion': ['gini', 'entropy'],
+                              'classifier__splitter': ['best', 'random'],
+                              'classifier__max_depth': np.arange(5, 10, 2),
+                              'classifier__max_leaf_nodes': np.arange(20, 40, 5),
+                              'classifier__min_samples_split': np.arange(2, 10, 3),
+                              'classifier__min_samples_leaf': np.arange(10, 80, 2)
+                              },
+            'random_forest': {'classifier__n_estimators': np.arange(50, 250, 5),
+                              'classifier__criterion': ['gini', 'entropy'],
+                              'classifier__max_depth': np.arange(3, 6, 2),
+                              'classifier__min_samples_split': np.arange(3, 10, 2),
+                              'classifier__min_samples_leaf': np.arange(20, 80, 5)
+                              }
+            },
+
+        2: {'logistic': {'classifier__penalty': ['l1', 'l2', 'none'],
+                         'classifier__dual': [True, False],
+                         'classifier__C': np.arange(0.2, 5, 0.2),  # smaller means stronger regularization
+                         'classifier__multi_class': ['auto', 'ovr', 'multinomial']
+                         },
+            'decision_tree': {'classifier__criterion': ['gini', 'entropy'],
+                              'classifier__splitter': ['best', 'random'],
+                              'classifier__max_depth': np.arange(5, 10, 2),
+                              'classifier__max_leaf_nodes': np.arange(20, 40, 5),
+                              'classifier__min_samples_split': np.arange(2, 10, 3),
+                              'classifier__min_samples_leaf': np.arange(10, 80, 2)
+                              },
+            'random_forest': {'classifier__n_estimators': np.arange(50, 250, 5),
+                              'classifier__criterion': ['gini', 'entropy'],
+                              'classifier__max_depth': np.arange(3, 6, 2),
+                              'classifier__min_samples_split': np.arange(3, 10, 2),
+                              'classifier__min_samples_leaf': np.arange(20, 80, 5)
+                              }
+            },
+
+        3: {'logistic': {'classifier__penalty': ['l2', 'none'],
+                         'classifier__dual': [True, False],
+                         'classifier__C': np.arange(0.5, 5, 0.5),
+                         'classifier__multi_class': ['auto', 'ovr', 'multinomial']
+                         },
+            'decision_tree': {'classifier__criterion': ['gini', 'entropy'],
+                              'classifier__splitter': ['best', 'random'],
+                              'classifier__max_depth': np.arange(5, 10, 2),
+                              'classifier__max_leaf_nodes': np.arange(20, 40, 5),
+                              'classifier__min_samples_split': np.arange(2, 10, 3),
+                              'classifier__min_samples_leaf': np.arange(10, 80, 2)
+                              },
+            'random_forest': {'classifier__n_estimators': np.arange(50, 250, 5),
+                              'classifier__criterion': ['gini', 'entropy'],
+                              'classifier__max_depth': np.arange(3, 6, 2),
+                              'classifier__min_samples_split': np.arange(3, 10, 2),
+                              'classifier__min_samples_leaf': np.arange(20, 80, 5)
+                              }
+            }
     }
-    return param_dist
+    return param_dist[dict_num]
 
 
 class ModelPipeline:
 
-    def __init__(self, model_type, score_method):
+    def __init__(self, model_type, score_method, param_dist_num, random_state):
+        self.random_state = random_state
         self.X_info_columns = ['GVKEY_asset1', 'GVKEY_asset2', 'prediction_date', 'evaluation_date']
-        self.y_info_columns = ['prediction_date', 'evaluation_date', 'GVKEY_asset1', 'GVKEY_asset2', 'spread_return_60d_std',
+        self.y_info_columns = ['prediction_date', 'evaluation_date', 'GVKEY_asset1', 'GVKEY_asset2',
+                               'spread_return_60d_std',
                                'spread_t0', 'spread_t1', 'spread_t2', 'spread_t3', 'spread_t4', 'spread_t5',
                                'spread_return_1d', 'spread_return_2d', 'spread_return_3d', 'spread_return_4d',
                                'spread_return_5d']
         self.model_type = model_type
         self.score_method = score_method
 
-        self.param_dist = get_parameter_distribution()
+        self.param_dist = get_parameter_distribution(param_dist_num)
         self.pipeline = self.set_up_pipeline()
 
     def set_up_pipeline(self):
@@ -101,8 +145,8 @@ class ModelPipeline:
         y = self.get_labels(y_data)
 
         # Search for best params
-        cv = RandomizedSearchCV(self.pipeline, self.param_dist[self.model_type], random_state=4,
-                                scoring=self.score_method, n_jobs=-1, cv=fold_indices)
+        cv = RandomizedSearchCV(self.pipeline, self.param_dist[self.model_type], random_state=self.random_state,
+                                scoring=self.score_method, n_jobs=-1, cv=fold_indices, n_iter=20)
         cv.fit(X, y)
         self.pipeline = cv.best_estimator_
 
