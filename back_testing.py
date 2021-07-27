@@ -2,10 +2,11 @@ import pandas as pd
 import model_training as mdl
 import datetime
 import numpy as np
-
+from pathlib import Path
 
 import model_training as mdl
 import trading_strategy as ts
+import CONFIG
 
 
 def find_dates(beg_date, end_date, data_y):
@@ -33,7 +34,7 @@ def get_last_bus_date(data_y, today):
 
 class BackTest:
 
-    def __init__(self, X_data, y_data, beg_date, end_date, model_type, score_method):
+    def __init__(self, X_data, y_data, beg_date, end_date, model_type, score_method, param_dist_num, random_state):
         self.beg_date = pd.Timestamp(beg_date)
         self.end_date = pd.Timestamp(end_date)
         self.model_type = model_type
@@ -50,7 +51,7 @@ class BackTest:
                                'spread_return_5d']
 
         # Initialize ModelPipeline
-        self.model = mdl.ModelPipeline(model_type, score_method)
+        self.model = mdl.ModelPipeline(model_type, score_method, param_dist_num, random_state)
 
         # Initialize a portfolio
         self.portfolio = ts.Portfolio(self.y_data)
@@ -113,7 +114,7 @@ class BackTest:
                                                           'y_pred': 'direction'})
         return selected_trades
 
-    def back_testing_given_period(self):  # Change this method name to back test
+    def back_testing_given_period(self, prob_predicted_trade=0.5):
 
         # Get the range of all trade dates
         range_mask = (self.y_data['prediction_date'] >= self.beg_date) & (
@@ -123,7 +124,7 @@ class BackTest:
         # Make prediction for each trade date within the range & Update portfolio holdings
         for trade_date in trade_date_range:
             self.get_the_most_updated_model(trade_date)
-            selected_trades = self.select_trades(trade_date, 0.5)
+            selected_trades = self.select_trades(trade_date, prob_predicted_trade)
             self.portfolio.update_port_holdings(trade_date, selected_trades)
 
     def calculate_daily_returns(self):
@@ -137,60 +138,85 @@ class BackTest:
         self.port_daily_returns = port_daily_returns
         return port_daily_returns
 
-    def risk_and_return(self):
+    def calculate_monthly_returns(self):
+        port = self.port_daily_returns.copy()
+        port['year'] = port['effective_date'].dt.year
+        port['month'] = port['effective_date'].dt.month
+        port_monthly_returns = port.groupby(['year', 'month'])['daily_return'].apply(
+            lambda x: (1 + x).prod() - 1).reset_index().rename(columns={'daily_return': 'monthly_return'})
+
+        return port_monthly_returns
+
+    def calculate_annual_returns(self):
+        port = self.port_daily_returns.copy()
+        port['year'] = port['effective_date'].dt.year
+
+        port_annual_returns = port.groupby('year')['daily_return'].apply(lambda x: (1 + x).prod() - 1).reset_index().rename(
+            columns={'daily_return': 'annual_return'})
+        annual_std = port.groupby('year')['daily_return'].apply(
+            lambda x: x.std() * np.sqrt(x.count())).reset_index().rename(columns={'daily_return': 'annual_std'})
+        port_annual_returns = port_annual_returns.merge(annual_std, on='year')
+        port_annual_returns['sharpe'] = port_annual_returns['annual_return'] / port_annual_returns['annual_std']
+
+        return port_annual_returns
+
+    def annualized_risk_and_return(self):
         port_daily_returns = self.port_daily_returns.copy()
         total_return = (1 + port_daily_returns['daily_return']).prod() - 1
         num_years = port_daily_returns['effective_date'].max().year - port_daily_returns[
             'effective_date'].min().year + 1
+
         annualized_return = (1 + total_return) ** (1 / num_years) - 1
         standard_deviation = port_daily_returns['daily_return'].std() * np.sqrt(252)
         sharpe = annualized_return / standard_deviation
 
+        perform_dict = {'annualized_return': annualized_return,
+                        'annualized_std': standard_deviation,
+                        'annualized_sharpe': sharpe
+                        }
+        performance = pd.Series(perform_dict)
+
         print(f"annualized_return is {annualized_return}")
         print(f"std is {standard_deviation}")
         print(f"sharpe is {sharpe}")
-        return sharpe
+        return performance
 
 
 if __name__ == '__main__':
-    features, labels = mdl.read_features_label_data()
+
     # Record run time
     start_time = datetime.datetime.now()
 
-    # # Initialize BackTest object
-    # model_list = ['logistic',  'decision_tree', 'random_forest']
-    # for model in model_list:
-    #     back_test = BackTest(features, labels, beg_date='2013-01-01', end_date='2020-12-31', model_type=model,
-    #                          score_method='f1_macro')
-    #     back_test.back_testing_given_period()
-    #     port = back_test.portfolio.port_holdings  # --> This gives you the portfolio holdings
-    #     port_returns = back_test.calculate_daily_returns()
-    #     sharpe_ratio = back_test.risk_and_return()
-    #
-    #     fig = port_returns.plot(x='effective_date', y='cum_return').get_figure()
-    #     fig.savefig('cum_return_plot' + model + '.pdf')
-    #
-    #     port_returns.to_csv('daily_returns' + model + '.csv')
-    #     port.to_csv('port_holdings' + model + '.csv')
+    # Read features & labels data
+    features, labels = mdl.read_features_label_data()
 
-    # Define Model Type
-    model = 'logistic'
-    # model = 'decision_tree'
-    # model = 'random_forest'
+    # Start Backtesting
+    back_test = BackTest(features, labels, beg_date='2013-01-01', end_date='2020-12-31', model_type=CONFIG.model,
+                         score_method='f1_macro',  param_dist_num=CONFIG.param_dist,
+                         random_state=CONFIG.random_state_num
+                         )
+    back_test.back_testing_given_period(prob_predicted_trade=CONFIG.prob_predicted_trade)
+    port = back_test.portfolio.port_holdings  # This gives you the portfolio holdings
+    daily_returns = back_test.calculate_daily_returns()  # This gives daily return series
+    monthly_returns = back_test.calculate_monthly_returns()  # This gives monthly return series
+    annual_returns = back_test.calculate_annual_returns()  # This gives annual return series
+    total_performance = back_test.annualized_risk_and_return()  # This gives annualized returns & SR over the backtesting period
 
-    back_test = BackTest(features, labels, beg_date='2013-01-01', end_date='2020-12-31', model_type=model,
-                         score_method='f1_macro')
-    back_test.back_testing_given_period()
-    port = back_test.portfolio.port_holdings  # --> This gives you the portfolio holdings
-    port_returns = back_test.calculate_daily_returns()
-    sharpe_ratio = back_test.risk_and_return()
+    # Save all the information to backtest_result folder
+    backtest_folder = Path('backtest_results') / Path(CONFIG.model)
 
-    fig = port_returns.plot(x='effective_date', y='cum_return').get_figure()
-    fig.savefig('cum_return_plot' + model + '.pdf')
+    # Save Cumulative return plot
+    fig = daily_returns.plot(x='effective_date', y='cum_return').get_figure()
+    fig.savefig(backtest_folder / Path(f'return_plot_{CONFIG.tag_for_current_run}.pdf'))
 
-    port_returns.to_csv('daily_returns' + model + '.csv')
-    port.to_csv('port_holdings' + model + '.csv')
+    # Save all performance info
+    daily_returns.to_csv(backtest_folder / Path(f'daily_returns_{CONFIG.tag_for_current_run}.csv'))
+    monthly_returns.to_csv(backtest_folder / Path(f'monthly_returns_{CONFIG.tag_for_current_run}.csv'))
+    annual_returns.to_csv(backtest_folder / Path(f'annual_returns_{CONFIG.tag_for_current_run}.csv'))
+    total_performance.to_csv(backtest_folder / Path(f'total_performance_{CONFIG.tag_for_current_run}.csv'))
 
+    # Save Portfolio holdings for investigation
+    port.to_csv(backtest_folder / Path(f'port_holdings_{CONFIG.tag_for_current_run}.csv'))
 
     # Record run time
     end_time = datetime.datetime.now()
