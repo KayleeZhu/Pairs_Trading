@@ -214,10 +214,10 @@ if __name__ == '__main__':
     # Parameters Control:
     data_folder = Path('../data')
     crsp_data = data_folder / Path('crsp_data.pkl')
-    save_path = data_folder / Path('cleaned_data.pkl')
+    save_path = data_folder / Path('cleaned_data_4_sectors.pkl')
     date_from = '2010-01-04'
     date_to = '2020-12-31'
-    sectors = ['financials', 'health_care']
+    sectors = ['financials', 'health_care', 'information_technology', 'communication_services']
 
     clean_crsp_data(data_path=crsp_data, output_path=save_path, start_date=date_from,
                     end_date=date_to, sectors_list=sectors)

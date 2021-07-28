@@ -4,6 +4,7 @@ import numpy as np
 import datetime
 
 import pca_feature_engineering as pca_fea
+import CONFIG
 
 
 def get_crsp_data(read_path):

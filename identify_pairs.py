@@ -165,7 +165,7 @@ if __name__ == '__main__':
     historical_days = 20
     pairs_of_the_day = get_pairs_for_one_trading_day(all_data=data, features_list=feature_list,
                                                      num_components=pca_components,
-                                                     historical_days=20, num_training_days=120, significant_level=0.01,
+                                                     historical_days=20, num_training_days=120, significant_level=0.05,
                                                      trading_date='2020-12-31')
     print(pairs_of_the_day)
 

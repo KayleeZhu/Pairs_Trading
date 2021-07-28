@@ -155,6 +155,9 @@ class BackTest:
             columns={'daily_return': 'annual_return'})
         annual_std = port.groupby('year')['daily_return'].apply(
             lambda x: x.std() * np.sqrt(x.count())).reset_index().rename(columns={'daily_return': 'annual_std'})
+        # TODO: think about if we should use sqrt(252) to replace,
+        #       the current logic will overstate SR if some days have no holdings
+
         port_annual_returns = port_annual_returns.merge(annual_std, on='year')
         port_annual_returns['sharpe'] = port_annual_returns['annual_return'] / port_annual_returns['annual_std']
 
@@ -200,7 +203,7 @@ if __name__ == '__main__':
     daily_returns = back_test.calculate_daily_returns()  # This gives daily return series
     monthly_returns = back_test.calculate_monthly_returns()  # This gives monthly return series
     annual_returns = back_test.calculate_annual_returns()  # This gives annual return series
-    total_performance = back_test.annualized_risk_and_return()  # This gives annualized returns & SR over the backtesting period
+    total_performance = back_test.annualized_risk_and_return()  # This gives performance over the backtesting period
 
     # Save all the information to backtest_result folder
     backtest_folder = Path('backtest_results') / Path(CONFIG.model)

@@ -5,6 +5,7 @@ import numpy as np
 from scipy.optimize import minimize
 
 import back_testing as bt
+import CONFIG
 
 
 class TradeExit:
@@ -114,22 +115,20 @@ class Portfolio:
 
         # Portfolio Constructions:
 
-
         # Update weight & contribution using num_active_trades
-        current_port['weight'] = current_port['spread_price'].abs() / current_port['spread_price'].abs().sum()  # Market cap weighted
+        current_port['weight'] = current_port['spread_price'].abs() / current_port[
+            'spread_price'].abs().sum()  # Market cap weighted
         # current_port['weight'] = 1 / current_port['num_active_trades']  # Equally weighted
 
         # Set a cap on weight --> Doesn't make sense to use all the money to make only a few trades
         current_port['weight'] = np.minimum(current_port['weight'], 0.2)
-
-        current_port['contribution'] = current_port['spread_return'] * current_port[
-            'weight']
+        current_port['contribution'] = current_port['spread_return'] * current_port['weight']
 
         # Close out trades --> Fill up close date col and set is_active to 0
         # Stop Loss condition
-        stop_loss_mask = current_port['cum_spread_return'] < -0.8 * current_port['spread_return_60d_std']
-        current_port.loc[stop_loss_mask, ['close_date']] = trade_date
-        current_port.loc[stop_loss_mask, ['is_active']] = 0
+        # stop_loss_mask = current_port['cum_spread_return'] < -0.8 * current_port['spread_return_60d_std']
+        # current_port.loc[stop_loss_mask, ['close_date']] = trade_date
+        # current_port.loc[stop_loss_mask, ['is_active']] = 0
 
         # Check at d3 if we get what the model predicts, if yes then exit trades
         close_mask_3d = current_port['holding_period'] == 3

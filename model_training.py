@@ -12,6 +12,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.model_selection import RandomizedSearchCV
 
 import spread_feature_engineering as spd
+import CONFIG
 
 
 def read_features_label_data():
@@ -175,7 +176,7 @@ class ModelPipeline:
 if __name__ == '__main__':
 
     # Get all_data & pairs data
-    data_path = Path('data/cleaned_data.pkl')
+    data_path = Path(f'data/cleaned_data_{CONFIG.sectors_num}_sectors.pkl')
     data = spd.get_crsp_data(data_path)
 
     pairs_path = Path('data/pairs_for_all_days.pkl')
