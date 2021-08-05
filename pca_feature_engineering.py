@@ -2,66 +2,9 @@ import pandas as pd
 from pathlib import Path
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+import datetime
 
 import CONFIG
-
-
-def calculate_daily_returns(data):
-    """
-    Calculate daily return of each stock
-    """
-    data.sort_values(by=['GVKEY', 'date'], inplace=True)
-
-    # Calculate adjusted price which encounter stock split & dividend
-    data.eval('adjusted_price = price_close / adjustment_factor * daily_total_return_factor', inplace=True)
-
-    # Calculate returns using adjusted price
-    data['return'] = data.groupby(['GVKEY'])['adjusted_price'].pct_change(fill_method='ffill')
-
-    # Drop the rows where return is NA
-    data.dropna(subset=['return'], inplace=True)
-    return data
-
-
-def calculate_cumulative_returns(data):
-    """
-    Calculate cumulative return of each stock
-    """
-
-    data['return_factor'] = data['return'] + 1
-    data['cum_return'] = data.groupby(['GVKEY'])['return_factor'].cumprod() - 1
-
-    # Drop the rows where return is NA
-    data.dropna(subset=['cum_return'], inplace=True)
-    return data
-
-
-def calculate_rolling_returns(data):
-    # Calculate rolling returns with 5 day windows
-    # TODO: This function is not working currently, need to fix
-    data['roll_return'] = data.groupby(['GVKEY'])['return_factor'].rolling(5).apply(lambda x: x.prod()) - 1
-
-    # Drop the rows where return is NA
-    data.dropna(subset=['roll_return'], inplace=True)
-    return data
-
-
-def calculate_correlation(data):
-    # Calculate the correlation matrix of the investment universe
-    # TODO
-
-    return data
-
-
-def calculate_dividend_yield(data):
-    """
-    Calculate dividend yield of each stock
-    :param data: The DataFrame we need to work on which contains annual dividend and close price
-    :return: DataFrame with dividend_yield column
-    """
-    data.eval('dividend_yield = annual_dividend / price_close', inplace=True)
-    data.dropna(subset=['dividend_yield'], inplace=True)
-    return data
 
 
 class PCAFeatures:
@@ -85,7 +28,7 @@ class PCAFeatures:
         # Drop the rows with NA returns due to the shift
         features = self.create_features_columns(feature_name)
         last_col = feature_name + '_t_' + str(self.historical_days)
-        features.dropna(subset=[last_col], inplace=True)
+        features = features.dropna(subset=[last_col])
 
         return features
 
@@ -132,14 +75,8 @@ def apply_pca(all_features, num_components):
 
 def generate_pca_features_for_clustering(data, num_components, historical_days, features_list):
 
-    # start_time = datetime.now()
-    # print("start working on PCA")
-
-    # TODO: Test if these functions are working
-    data = calculate_daily_returns(data)
-    data = calculate_cumulative_returns(data)
-    # dt = calculate_rolling_returns(data)
-    data = calculate_dividend_yield(data)
+    start_time = datetime.datetime.now()
+    print("start working on PCA")
 
     all_features = get_all_features_for_pca(data, historical_days, features_list)
     exp_ratio, pca_features = apply_pca(all_features, num_components)
@@ -155,9 +92,9 @@ def generate_pca_features_for_clustering(data, num_components, historical_days, 
     pca_features = pca_features.join(data)[pca_columns]
 
     # Recording time and notify user how well the PCA is doing
-    # end_time = datetime.now()
-    # run_time = end_time - start_time
-    # print(f'{run_time.seconds} seconds')
+    end_time = datetime.datetime.now()
+    run_time = end_time - start_time
+    print(f'{run_time.seconds} seconds')
     print(f"The explained variance ratio is: {exp_ratio}")
     print(f"The sum of explained ratio is: {exp_ratio.sum()}")
 
@@ -166,14 +103,12 @@ def generate_pca_features_for_clustering(data, num_components, historical_days, 
 
 if __name__ == '__main__':
 
-    # Instruction:
-    # Please run data_cleaning.py first to the cleaned data
-    # Drag the clean_data.pkl file under "data" folder
-
-    data_path = Path(f'data/cleaned_data_{CONFIG.sectors_num}_sectors.pkl')
-    dt = pd.read_pickle(data_path)
+    data_path = Path(f'data/1_cleaned_data/{CONFIG.cleaned_pkl_file_name}')
+    df = pd.read_pickle(data_path)
 
     # Parameters Control:
     feature_list = ['return', 'cum_return', 'volume', 'current_eps', 'dividend_yield']
-    pca_results, explained_ratio = generate_pca_features_for_clustering(data=dt, num_components=4, historical_days=20,
+    pca_results, explained_ratio = generate_pca_features_for_clustering(data=df, num_components=4, historical_days=20,
                                                                         features_list=feature_list)
+
+    pca_results.to_pickle(f'data/2_pca_features/pca_features.pkl')
