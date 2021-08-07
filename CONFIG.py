@@ -10,6 +10,10 @@ num_years = 20
 sectors_num = 'all'
 cleaned_pkl_file_name = f'cleaned_data_{num_years}y_{sectors_num}sectors.pkl'
 
+# Identify Pairs
+coint_test_method = 'both'
+# coint_test_method = 'johansen'
+
 
 # Define model type
 model = 'logistic'

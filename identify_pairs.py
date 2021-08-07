@@ -216,14 +216,14 @@ if __name__ == '__main__':
     clusters_for_all_dates = pd.read_pickle(f'data/3_asset_cluster/clusters_for_all_dates_{training_freq}.pkl')
 
     # Get pairs data for one day
-    # pairs_of_the_day = get_pairs_for_one_trading_day(all_data=cleaned_data, cluster_data=clusters_for_all_dates,
-    #                                                  num_historical_days=150, significance_level=0.05,
-    #                                                  trading_date='2001-01-04', coint_test_method='johansen')
-    # print(pairs_of_the_day)
+    pairs_of_the_day = get_pairs_for_one_trading_day(all_data=cleaned_data, cluster_data=clusters_for_all_dates,
+                                                     num_historical_days=150, significance_level=0.05,
+                                                     trading_date='2001-01-04', coint_test_method='johansen')
+    print(pairs_of_the_day)
 
     # Get pairs for all days, run by year
     pairs_list = []
-    test_method = 'both'
+    test_method = CONFIG.coint_test_method
     for year in np.arange(2001, 2021, 1):
         print(f'Getting pairs for year {year}')
         start_time = datetime.datetime.now()
@@ -245,4 +245,4 @@ if __name__ == '__main__':
 
     # Concat all years' pairs data into one
     pairs_data_for_all_years = pd.concat(pairs_list, axis=1)
-    pairs_data_for_all_years.to_pickle(f'data/4_pairs_data/pairs_for_all_days.pkl')
+    pairs_data_for_all_years.to_pickle(f'data/4_pairs_data/pairs_for_all_days_{test_method}.pkl')
