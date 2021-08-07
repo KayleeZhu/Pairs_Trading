@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from pathlib import Path
 import datetime
 from itertools import combinations
@@ -40,6 +41,52 @@ def get_possible_pairs_for_each_cluster(asset_cluster):
     return possible_pairs_for_each_cluster_list
 
 
+def cointegration_engle(one_pair_of_asset, pair_testing_date, time_series1, time_series2):
+    # Augmented Engle-Granger method:
+    _, p_value, _, = coint(time_series1, time_series2)
+    # Run OLS to get asset weights, TODO: this method seems wrong, need to investigate
+    asset_weight1 = 1
+    asset_weight2 = OLS(time_series1, time_series2).fit().params.values[0]
+
+    return {'training_date': pair_testing_date,
+            'asset1_gvkey': one_pair_of_asset[0],
+            'asset2_gvkey': one_pair_of_asset[1],
+            'asset1_weight': asset_weight1,
+            'asset2_weight': asset_weight2,
+            'p_value': p_value
+            }
+
+
+def cointegration_johansen(one_pair_of_asset, pair_testing_date, time_series_df, significance_level):
+    # Johansen test:
+    test_result = coint_johansen(time_series_df, det_order=0, k_ar_diff=1)
+    asset_weight = test_result.evec[:, 0]
+    asset_weight1 = asset_weight[0]
+    asset_weight2 = asset_weight[1]
+
+    # Get artificial p-value for pairs selection later
+    critical_values = test_result.cvt[0]
+    trace_stat = test_result.lr1[0]
+    cv_dict = {0.1: {'cv': critical_values[0]},
+               0.05: {'cv': critical_values[1]},
+               0.01: {'cv': critical_values[2]},
+               }
+    for key in cv_dict.keys():
+        cv_dict[key]['p_value'] = key - 0.0001 if trace_stat > cv_dict[key]['cv'] else key + 0.001
+        cv_dict[key]['reject_null'] = True if trace_stat > cv_dict[key]['cv'] else False
+
+    # Assign the corresponding p_value for the significance_level
+    p_value = cv_dict[significance_level]['p_value']
+
+    return {'training_date': pair_testing_date,
+            'asset1_gvkey': one_pair_of_asset[0],
+            'asset2_gvkey': one_pair_of_asset[1],
+            'asset1_weight': asset_weight1,
+            'asset2_weight': asset_weight2,
+            'p_value': p_value
+            }
+
+
 def cointegration_test_for_one_pair(all_data, one_pair_of_asset, pair_testing_date, num_historical_days: int,
                                     significance_level: float, coint_test_method: str = 'johansen'):
     # Get the correct time range
@@ -62,39 +109,19 @@ def cointegration_test_for_one_pair(all_data, one_pair_of_asset, pair_testing_da
 
     # Cointegration test: Null is not cointegrated, if p_value is < significance_level then conintegrated
     if coint_test_method == 'engle':
-        # Augmented Engle-Granger method:
-        _, p_value, _, = coint(price_series['p1'], price_series['p2'])
-        # Run OLS to get asset weights, TODO: this method seems wrong, need to investigate
-        asset_weight1 = 1
-        asset_weight2 = OLS(price_series['p1'], price_series['p2']).fit().params.values[0]
-    else:
-        # Johansen test:
-        test_result = coint_johansen(price_series[['p1', 'p2']], det_order=0, k_ar_diff=1)
-        asset_weight = test_result.evec[:, 0]
-        asset_weight1 = asset_weight[0]
-        asset_weight2 = asset_weight[1]
+        coint_dict = cointegration_engle(one_pair_of_asset, pair_testing_date, price_series['p1'], price_series['p2'])
+    elif coint_test_method == 'johansen':
+        coint_dict = cointegration_johansen(one_pair_of_asset, pair_testing_date, price_series[['p1', 'p2']],
+                                            significance_level)
+    elif coint_test_method == 'both':
+        # Test on engle method first
+        coint_dict = cointegration_engle(one_pair_of_asset, pair_testing_date, price_series['p1'], price_series['p2'])
+        # If pass engle method, then use Johansen as second test; if doesn't pass engle, then no need to run Johansen
+        if coint_dict['p_value'] < significance_level:
+            coint_dict = cointegration_johansen(one_pair_of_asset, pair_testing_date, price_series[['p1', 'p2']],
+                                                significance_level)
 
-        # Get artificial p-value for pairs selection later
-        critical_values = test_result.cvt[0]
-        trace_stat = test_result.lr1[0]
-        cv_dict = {0.1: {'cv': critical_values[0]},
-                   0.05: {'cv': critical_values[1]},
-                   0.01: {'cv': critical_values[2]},
-                   }
-        for key in cv_dict.keys():
-            cv_dict[key]['p_value'] = key - 0.0001 if trace_stat > cv_dict[key]['cv'] else key + 0.001
-            cv_dict[key]['reject_null'] = True if trace_stat > cv_dict[key]['cv'] else False
-
-        # Assign the corresponding p_value for the significance_level
-        p_value = cv_dict[significance_level]['p_value']
-
-    return {'training_date': pair_testing_date,
-            'asset1_gvkey': one_pair_of_asset[0],
-            'asset2_gvkey': one_pair_of_asset[1],
-            'asset1_weight': asset_weight1,
-            'asset2_weight': asset_weight2,
-            'p_value': p_value
-            }
+    return coint_dict
 
 
 def loop_through_cluster_list(all_data, cluster_of_the_date, pair_testing_date, num_historical_days, significance_level,
@@ -178,7 +205,6 @@ def get_pairs_for_all_days(trading_date_beg, trading_date_end, all_data, cluster
 
 
 if __name__ == '__main__':
-    start_time = datetime.datetime.now()
 
     # Get cleaned data
     data_path = Path(f'data/1_cleaned_data/{CONFIG.cleaned_pkl_file_name}')
@@ -195,14 +221,28 @@ if __name__ == '__main__':
     #                                                  trading_date='2001-01-04', coint_test_method='johansen')
     # print(pairs_of_the_day)
 
-    # Get pairs for all days
-    all_pairs = get_pairs_for_all_days(trading_date_beg='2001-01-01', trading_date_end='2001-01-02',
-                                       all_data=cleaned_data, cluster_data=clusters_for_all_dates,
-                                       num_historical_days=182, significance_level=0.05, coint_test_method='johansen')
-    # # Save all pairs data to pkl
-    all_pairs.to_pickle(f'data/4_pairs_data/pairs_for_all_days_{CONFIG.sectors_num}_sectors_2001Jan.pkl')
+    # Get pairs for all days, run by year
+    pairs_list = []
+    test_method = 'both'
+    for year in np.arange(2001, 2021, 1):
+        print(f'Getting pairs for year {year}')
+        start_time = datetime.datetime.now()
 
-    # Record run time
-    end_time = datetime.datetime.now()
-    run_time = end_time - start_time
-    print(f'{run_time.seconds} seconds')
+        beg = str(year) + '-01-01'
+        end = str(year) + '-12-31'
+        all_pairs = get_pairs_for_all_days(trading_date_beg=beg, trading_date_end=end,
+                                           all_data=cleaned_data, cluster_data=clusters_for_all_dates,
+                                           num_historical_days=182, significance_level=0.05,
+                                           coint_test_method=test_method)
+        # # Save all pairs data to pkl
+        all_pairs.to_pickle(f'data/4_pairs_data/pairs_for_all_days_{year}_{test_method}.pkl')
+        pairs_list.append(all_pairs)
+
+        # Record run time
+        end_time = datetime.datetime.now()
+        run_time = end_time - start_time
+        print(f'{run_time.seconds} seconds')
+
+    # Concat all years' pairs data into one
+    pairs_data_for_all_years = pd.concat(pairs_list, axis=1)
+    pairs_data_for_all_years.to_pickle(f'data/4_pairs_data/pairs_for_all_days.pkl')
