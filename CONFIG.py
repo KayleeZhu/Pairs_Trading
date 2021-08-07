@@ -5,7 +5,10 @@
 
 
 # Used to look up corresponding data
-sectors_num = 4  # Original 2
+num_years = 20
+# sectors_num = 4  # Original 2
+sectors_num = 'all'
+cleaned_pkl_file_name = f'cleaned_data_{num_years}y_{sectors_num}sectors.pkl'
 
 
 # Define model type
