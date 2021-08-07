@@ -3,15 +3,16 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 
+# from .. import CONFIG
 
-def convert_csv_to_pkl():
+
+def convert_csv_to_pkl(csv_path, pkl_path):
     """
     Read the csv data under data folder, convert the csv file to pkl file and save under data folder
     """
-    csv_path = Path('../data/crsp_data.csv')
+    # csv_path = Path('../data/crsp_data.csv')
+    # pkl_path = Path('../data/crsp_data.pkl')
     data = pd.read_csv(csv_path)
-
-    pkl_path = Path('../data/crsp_data.pkl')
     data.to_pickle(pkl_path)
 
 
@@ -64,12 +65,12 @@ def rename_columns(data):
                 )
 
     # rearrange data columns
-    data = data[['GVKEY', 'date', 'ticker', 'cusip', 'company_name',
+    data = data[['GVKEY', 'date', 'ticker', 'company_name',
                  'daily_total_return_factor', 'adjustment_factor', 'price_close',
                  'price_open', 'price_high', 'price_low', 'shares_outstanding',
                  'volume', 'dividend_per_share', 'annual_dividend', 'current_eps',
                  'sector_name', 'sector', 'industry_group', 'industry', 'sub_industry',
-                 'state', 'city', 'incorp_code', 'stock_exchg_code']]
+                 'state', 'city', 'incorp_code', 'stock_exchg_code']]  # 'cusip'
 
     return data
 
@@ -148,6 +149,64 @@ def remove_companies_with_missing_dividend(data):
     return data
 
 
+def calculate_daily_returns(data):
+    """
+    Calculate daily return of each stock
+    """
+    data.sort_values(by=['GVKEY', 'date'], inplace=True)
+
+    # Calculate adjusted price which encounter stock split & dividend
+    data.eval('adjusted_price = price_close / adjustment_factor * daily_total_return_factor', inplace=True)
+
+    # Calculate returns using adjusted price
+    data['return'] = data.groupby(['GVKEY'])['adjusted_price'].pct_change(fill_method='ffill')
+
+    # Drop the rows where return is NA
+    data.dropna(subset=['return'], inplace=True)
+    return data
+
+
+def calculate_cumulative_returns(data):
+    """
+    Calculate cumulative return of each stock
+    """
+
+    data['return_factor'] = data['return'] + 1
+    data['cum_return'] = data.groupby(['GVKEY'])['return_factor'].cumprod() - 1
+
+    # Drop the rows where return is NA
+    data.dropna(subset=['cum_return'], inplace=True)
+    return data
+
+
+def calculate_rolling_returns(data):
+    # Calculate rolling returns with 5 day windows
+    # TODO: This function is not working currently, need to fix
+    data['roll_return'] = data.groupby(['GVKEY'])['return_factor'].rolling(5).apply(lambda x: x.prod()) - 1
+
+    # Drop the rows where return is NA
+    data.dropna(subset=['roll_return'], inplace=True)
+    return data
+
+
+def calculate_correlation(data):
+    # Calculate the correlation matrix of the investment universe
+    # TODO
+
+    return data
+
+
+def calculate_dividend_yield(data):
+    """
+    Calculate dividend yield of each stock
+    :param data: The DataFrame we need to work on which contains annual dividend and close price
+    :return: DataFrame with dividend_yield column
+    """
+    data.eval('dividend_yield = annual_dividend / price_close', inplace=True)
+    data.dropna(subset=['dividend_yield'], inplace=True)
+    return data
+
+
 def clean_crsp_data(data_path: Path, output_path: Path, start_date: str, end_date: str, sectors_list: list):
     """
 
@@ -158,46 +217,31 @@ def clean_crsp_data(data_path: Path, output_path: Path, start_date: str, end_dat
     :param sectors_list: The list of sectors we are interested in
     :return: The cleaned data
     """
-
     start_time = datetime.now()
     print("start cleaning data")
-
     data = pd.read_pickle(data_path)
 
+    # Data Cleaning part:
     # Convert datadate column to datetime
     data['datadate'] = pd.to_datetime(data['datadate'], format='%Y/%m/%d')
-
-    # Sort by company & date
     data.sort_values(by=['GVKEY', 'datadate'], inplace=True)
-
     # Create a column: sector names
     data = map_sector_code_to_name(data)
-
-    # Rename columns
     data = rename_columns(data)
-
-    # Get the data within the target period:
     data = select_time_period(data, start_date, end_date)
-
-    # Get the targeted sectors stocks
     data = select_sectors(data, sectors_list)
-
-    # Drop companies that have insufficient history or have duplicated dates
     data = remove_companies_with_wrong_dates(data)
-
-    # Drop the stocks that have zero record of total_return_factor
     data = remove_companies_with_missing_total_return_factors(data)
-
-    # Drop the stocks that have insufficient record of volume
     data = remove_companies_with_missing_volumes(data)
-
-    # Drop the stocks that have insufficient record of current eps
     data = remove_companies_with_missing_eps(data)
-
-    # Drop the stocks that have insufficient record of annual dividend
     data = remove_companies_with_missing_dividend(data)
-
     data.drop_duplicates(inplace=True)
+
+    # Calculation:
+    data = calculate_daily_returns(data)
+    data = calculate_cumulative_returns(data)
+    # dt = calculate_rolling_returns(data)
+    data = calculate_dividend_yield(data)
 
     # Save the cleaned data to pickle file -- quicker to read
     data.to_pickle(output_path)
@@ -209,15 +253,24 @@ def clean_crsp_data(data_path: Path, output_path: Path, start_date: str, end_dat
 
 
 if __name__ == '__main__':
-    # convert_csv_to_pkl()
 
     # Parameters Control:
+    num_years = 20
     data_folder = Path('../data')
-    crsp_data = data_folder / Path('crsp_data.pkl')
-    save_path = data_folder / Path('cleaned_data_4_sectors.pkl')
-    date_from = '2010-01-04'
-    date_to = '2020-12-31'
-    sectors = ['financials', 'health_care', 'information_technology', 'communication_services']
 
-    clean_crsp_data(data_path=crsp_data, output_path=save_path, start_date=date_from,
-                    end_date=date_to, sectors_list=sectors)
+    # Convert csv file to pkl file
+    crsp_csv_path = data_folder / Path(f'0_crsp_data/crsp_data_{num_years}y.csv')
+    crsp_pkl_path = data_folder / Path(f'0_crsp_data/crsp_data_{num_years}y.pkl')
+    # convert_csv_to_pkl(csv_path=crsp_csv_path, pkl_path=crsp_pkl_path)
+
+    # Clean data:
+    date_from = '2000-01-03'
+    date_to = '2020-12-31'
+    sectors = ['energy', 'materials', 'industrials', 'consumer_discretionary', 'consumer_staples',
+               'health_care', 'financials', 'information_technology', 'communication_services',
+               'utilities', 'real_estate']
+    cleaned_pkl_save_path = data_folder / Path(f'1_cleaned_data/cleaned_data_{num_years}y_allsectors.pkl')
+    # cleaned_pkl_save_path = data_folder / Path(CONFIG.cleaned_pkl_file_name)
+
+    clean_crsp_data(data_path=crsp_pkl_path, output_path=cleaned_pkl_save_path,
+                    start_date=date_from, end_date=date_to, sectors_list=sectors)
