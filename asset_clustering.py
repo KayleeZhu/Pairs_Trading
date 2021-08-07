@@ -1,8 +1,9 @@
 import pandas as pd
+import numpy as np
 from pathlib import Path
 from sklearn.cluster import OPTICS
 from sklearn.cluster import KMeans
-import pca_feature_engineering as fea
+import datetime
 
 import CONFIG
 
@@ -50,16 +51,67 @@ class Cluster:
         return cluster_label_all_assets
 
 
+def get_monthly_cluster_dates(beg_date, end_date, data):
+    # Get the data between given beg_date & end_date
+    range_mask = (data['date'] >= beg_date) & (data['date'] <= end_date)
+    data = data.copy().loc[range_mask, :]
+
+    # Find the first date in each year & first date in each month
+    data['month'] = data['date'].dt.month
+    data['year'] = data['date'].dt.year
+    month_beg = data.groupby(['year', 'month'])['date'].min()
+    return month_beg
+
+
+def get_last_bus_date(data, today):
+    # Get the last business of today based on dates record in data_y
+    all_dates = data.copy()['date'].unique()
+    today_index = np.where(all_dates == today)
+    last_bus_date = all_dates[today_index[0][0] - 1]
+
+    return last_bus_date
+
+
+def generate_cluster_for_all_dates(beg_date, end_date, pca_features, retrain_freq='daily'):
+
+    # Assume by default, we retrain cluster daily
+    range_mask = (pca_features['date'] >= beg_date) & (pca_features['date'] <= end_date)
+    data_in_range = pca_features.copy().loc[range_mask, :]
+    cluster_date_list = data_in_range['date'].unique()
+    if retrain_freq == 'monthly':
+        cluster_date_list = get_monthly_cluster_dates(beg_date, end_date, pca_features)
+
+    cluster_list = []
+    for date in cluster_date_list:
+        print(f'asset clustering for date {date}')
+        asset_cluster = Cluster(date, pca_features)
+        asset_cluster = asset_cluster.optics()
+        cluster_list.append(asset_cluster)
+
+    return pd.concat(cluster_list, axis=0)
+
+
 if __name__ == '__main__':
+    start_time = datetime.datetime.now()
+    print("start working on asset clustering")
 
-    data_path = Path(f'data/cleaned_data_{CONFIG.sectors_num}_sectors.pkl')
-    dt = pd.read_pickle(data_path)
+    data_path = Path(f'data/1_cleaned_data/{CONFIG.cleaned_pkl_file_name}')
+    cleaned_data = pd.read_pickle(data_path)
 
-    # Parameters Control --> Get PCA features for clustering
-    feature_list = ['return', 'cum_return', 'volume', 'current_eps', 'dividend_yield']
-    pca, explained_ratio = fea.generate_pca_features_for_clustering(data=dt, num_components=4, historical_days=20,
-                                                                    features_list=feature_list)
+    # Get PCA features for clustering from data folder
+    pca_results = pd.read_pickle(f'data/2_pca_features/pca_features.pkl')
 
     # Clustering
-    asset_cluster = Cluster(training_date='2020-12-31', pca_features=pca)
-    asset_cluster = asset_cluster.optics()
+    # asset_cluster = Cluster(training_date='2020-12-31', pca_features=pca_results)
+    # asset_cluster = asset_cluster.optics()
+
+    # Generated asset cluster for all dates
+    training_freq = 'daily'
+    clusters_for_all_dates = generate_cluster_for_all_dates(beg_date='2000-01-04', end_date='2020-12-31',
+                                                            pca_features=pca_results, retrain_freq=training_freq)
+    clusters_for_all_dates.to_pickle(f'data/3_asset_cluster/clusters_for_all_dates_{training_freq}.pkl')
+
+    # Run time
+    end_time = datetime.datetime.now()
+    run_time = end_time - start_time
+    print(f'{run_time.seconds} seconds')
