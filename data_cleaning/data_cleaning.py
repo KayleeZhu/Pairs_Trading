@@ -252,6 +252,14 @@ def clean_crsp_data(data_path: Path, output_path: Path, start_date: str, end_dat
     print("Data are cleaned")
 
 
+def vix_data_cleaning(data):
+    data.Date = pd.to_datetime(data['Date'], format='%Y-%m-%d')
+    data['year'] = data.Date.dt.year
+    data['month'] = data.Date.dt.month
+    df = data.groupby(['year','month'])['Adj Close'].mean()
+    df.reset_index().rename(columns={'Adj Close': 'vix'}).to_csv(f'data/0_other_data/VIX.csv', index=False)
+
+
 if __name__ == '__main__':
 
     # Parameters Control:
