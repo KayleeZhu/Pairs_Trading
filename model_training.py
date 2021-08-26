@@ -15,75 +15,51 @@ import spread_feature_engineering as spd
 import CONFIG
 
 
-def read_features_label_data():
-
-    y_pkl_path = Path('data/pairs_label.pkl')
-    X_pkl_path = Path('data/pairs_features.pkl')
-
-    labels = pd.read_pickle(y_pkl_path)
-    features = pd.read_pickle(X_pkl_path)
-
-    return features, labels
-
-
 def get_train_val_indices(data):
 
     cv = kfoldcv.CombPurgedKFoldCV(n_splits=5, n_test_splits=1, embargo_td=pd.Timedelta(days=10))
-
     data = data.sort_values('prediction_date')
     fold_indices = list(cv.split(data, pred_times=data['prediction_date'], eval_times=data['evaluation_date']))
 
     return fold_indices
 
 
+def time_series_sample_weighting_vix(y_data, vix_data, higher_weight_factor=1.2):
+
+    y_data['year'] = y_data['prediction_date'].dt.year
+    y_data['month'] = y_data['prediction_date'].dt.month
+    y_data = y_data.merge(vix_data, on=['year', 'month'], how='left')
+
+    # Get VIX value of last month --> current_vix
+    last_month_list = y_data.groupby(['year', 'month'])['prediction_date'].unique().values[-1]
+    last_month_mask = y_data.prediction_date.isin(last_month_list)
+    current_vix = y_data[last_month_mask].vix.mean()
+    y_data['vix_diff'] = abs(y_data['vix'] - current_vix)
+
+    # Reassign sample weights
+    avg_weight = 1 / len(y_data)
+    mask = y_data['vix_diff'] <= y_data['vix_diff'].median()
+
+    # Calculate the weight factor applied to avg weight, such that sum of sample weight = 1
+    similar_vix_len = len(y_data[mask])
+    dissimilar_vix_len_vix_len = len(y_data[~mask])
+    lower_weight_factor = (1 - higher_weight_factor) * similar_vix_len / dissimilar_vix_len_vix_len + 1
+    y_data['sample_weight'] = np.where(mask, avg_weight * higher_weight_factor, avg_weight * lower_weight_factor)
+
+    return y_data['sample_weight'].sort_index()
+
+
 def get_parameter_distribution(dict_num):
     # Define a dictionary of parameters for each model
 
     param_dist = {
-        1: {'logistic': {'classifier__penalty': ['l2', 'none'],
-                         'classifier__dual': [True, False],
+        1: {'logistic': {'classifier__penalty': ['l2'],
+                         'classifier__dual': [False],
                          'classifier__C': np.arange(0.5, 5, 0.5),
-                         'classifier__multi_class': ['auto', 'ovr', 'multinomial']
-                         },
-            'decision_tree': {'classifier__criterion': ['gini', 'entropy'],
-                              'classifier__splitter': ['best', 'random'],
-                              'classifier__max_depth': np.arange(5, 10, 2),
-                              'classifier__max_leaf_nodes': np.arange(20, 40, 5),
-                              'classifier__min_samples_split': np.arange(2, 10, 3),
-                              'classifier__min_samples_leaf': np.arange(10, 80, 2)
-                              },
-            'random_forest': {'classifier__n_estimators': np.arange(50, 250, 5),
-                              'classifier__criterion': ['gini', 'entropy'],
-                              'classifier__max_depth': np.arange(3, 6, 2),
-                              'classifier__min_samples_split': np.arange(3, 10, 2),
-                              'classifier__min_samples_leaf': np.arange(20, 80, 5)
-                              }
-            },
-
-        2: {'logistic': {'classifier__penalty': ['l1', 'l2', 'none'],
-                         'classifier__dual': [True, False],
-                         'classifier__C': np.arange(0.2, 5, 0.2),  # smaller means stronger regularization
-                         'classifier__multi_class': ['auto', 'ovr', 'multinomial']
-                         },
-            'decision_tree': {'classifier__criterion': ['gini', 'entropy'],
-                              'classifier__splitter': ['best', 'random'],
-                              'classifier__max_depth': np.arange(5, 10, 2),
-                              'classifier__max_leaf_nodes': np.arange(20, 40, 5),
-                              'classifier__min_samples_split': np.arange(2, 10, 3),
-                              'classifier__min_samples_leaf': np.arange(10, 80, 2)
-                              },
-            'random_forest': {'classifier__n_estimators': np.arange(50, 250, 5),
-                              'classifier__criterion': ['gini', 'entropy'],
-                              'classifier__max_depth': np.arange(3, 6, 2),
-                              'classifier__min_samples_split': np.arange(3, 10, 2),
-                              'classifier__min_samples_leaf': np.arange(20, 80, 5)
-                              }
-            },
-
-        3: {'logistic': {'classifier__penalty': ['l2', 'none'],
-                         'classifier__dual': [True, False],
-                         'classifier__C': np.arange(0.5, 5, 0.5),
-                         'classifier__multi_class': ['auto', 'ovr', 'multinomial']
+                         'classifier__multi_class': ['auto', 'ovr', 'multinomial'],
+                         # 'classifier__random_state': [0],
+                         # 'classifier__solver': ['saga'],
+                         'classifier__max_iter': [3000]
                          },
             'decision_tree': {'classifier__criterion': ['gini', 'entropy'],
                               'classifier__splitter': ['best', 'random'],
@@ -106,15 +82,11 @@ def get_parameter_distribution(dict_num):
 class ModelPipeline:
 
     def __init__(self, model_type, score_method, param_dist_num, random_state):
-        self.random_state = random_state
-        self.X_info_columns = ['GVKEY_asset1', 'GVKEY_asset2', 'prediction_date', 'evaluation_date']
-        self.y_info_columns = ['prediction_date', 'evaluation_date', 'GVKEY_asset1', 'GVKEY_asset2',
-                               'spread_return_60d_std',
-                               'spread_t0', 'spread_t1', 'spread_t2', 'spread_t3', 'spread_t4', 'spread_t5',
-                               'spread_return_1d', 'spread_return_2d', 'spread_return_3d', 'spread_return_4d',
-                               'spread_return_5d']
         self.model_type = model_type
         self.score_method = score_method
+        self.random_state = random_state
+        self.X_info_columns = CONFIG.X_info_columns
+        self.y_info_columns = CONFIG.y_info_columns
 
         self.param_dist = get_parameter_distribution(param_dist_num)
         self.pipeline = self.set_up_pipeline()
@@ -135,7 +107,7 @@ class ModelPipeline:
         return X
 
     def get_labels(self, y_data):
-        return y_data.copy()['y']
+        return y_data['y'].copy()
 
     def hyperparameter_tunning(self, X_data, y_data):
         # Get fold indicies:
@@ -147,17 +119,20 @@ class ModelPipeline:
 
         # Search for best params
         cv = RandomizedSearchCV(self.pipeline, self.param_dist[self.model_type], random_state=self.random_state,
-                                scoring=self.score_method, n_jobs=-1, cv=fold_indices, n_iter=20)
+                                scoring=self.score_method, n_jobs=-1, cv=fold_indices, n_iter=5)
         cv.fit(X, y)
         self.pipeline = cv.best_estimator_
 
-    def model_training(self, X_data, y_data):
+    def model_training(self, X_data, y_data, vix_data, higher_weight_factor):
+        # Get sample weights for model fitting
+        sample_weights = time_series_sample_weighting_vix(y_data, vix_data, higher_weight_factor)
+
         # Drop non-features / non-labels columns
         X = self.get_features(X_data)
         y = self.get_labels(y_data)
 
         # Train the model
-        self.pipeline.fit(X, y)
+        self.pipeline.fit(X, y, sample_weight=sample_weights)
 
     def get_prediction(self, X_data, y_data):
         # Drop non-features columns
@@ -174,18 +149,17 @@ class ModelPipeline:
 
 
 if __name__ == '__main__':
-
     # Get all_data & pairs data
-    data_path = Path(f'data/cleaned_data_{CONFIG.sectors_num}_sectors.pkl')
-    data = spd.get_crsp_data(data_path)
-
-    pairs_path = Path('data/pairs_for_all_days.pkl')
-    pairs_data = spd.get_pairs_data(pairs_path)
-
-    # Get spread features & label
-    spread_features = spd.SpreadFeature(all_data=data, pairs=pairs_data)
-    pairs_features = spread_features.generate_label_y(upper_threshold_factor=0.8, lower_threshold_factor=0.8)
+    cleaned_data = pd.read_pickle(CONFIG.cleaned_data_path)
+    pairs_data = spd.get_pairs_data(CONFIG.pairs_data_path)
 
     # Get features & labels data
-    X, y = read_features_label_data()
-    ppl = ModelPipeline(model_type='random_forest', score_method='f1_macro')
+    y = pd.read_pickle(CONFIG.pairs_label_data_path)
+    X = pd.read_pickle(CONFIG.pairs_features_data_path)
+
+    ppl = ModelPipeline(model_type=CONFIG.model_type,
+                        score_method=CONFIG.score_method,
+                        param_dist_num=CONFIG.param_dist,
+                        random_state=CONFIG.random_state_num
+                        )
+
