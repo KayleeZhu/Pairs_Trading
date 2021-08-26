@@ -3,9 +3,9 @@ import datetime
 import numpy as np
 from pathlib import Path
 
-import model_training as mdl
+from model_training import ModelPipeline
 import trading_strategy as ts
-import performance_analysis as pa
+from performance_analysis import Performance
 import CONFIG
 
 
@@ -34,43 +34,43 @@ def get_last_bus_date(data_y, today):
 
 class BackTest:
 
-    def __init__(self, X_data, y_data, beg_date, end_date, model_type, score_method, param_dist_num, random_state):
+    def __init__(self, X_data, y_data, vix_data, beg_date, end_date, model_type, score_method, param_dist_num, random_state):
         self.beg_date = pd.Timestamp(beg_date)
         self.end_date = pd.Timestamp(end_date)
         self.model_type = model_type
         self.score_method = score_method
+        self.vix_data = vix_data
 
         # Initialize features & labels data
         self.X_data = X_data
         self.y_data = y_data
-        self.X_info_columns = ['GVKEY_asset1', 'GVKEY_asset2', 'prediction_date', 'evaluation_date']
-        self.y_info_columns = ['prediction_date', 'evaluation_date', 'GVKEY_asset1', 'GVKEY_asset2',
-                               'spread_return_60d_std',
-                               'spread_t0', 'spread_t1', 'spread_t2', 'spread_t3', 'spread_t4', 'spread_t5',
-                               'spread_return_1d', 'spread_return_2d', 'spread_return_3d', 'spread_return_4d',
-                               'spread_return_5d']
+        self.X_info_columns = CONFIG.X_info_columns
+        self.y_info_columns = CONFIG.y_info_columns
 
         # Initialize ModelPipeline
-        self.model = mdl.ModelPipeline(model_type, score_method, param_dist_num, random_state)
+        self.model = ModelPipeline(model_type, score_method, param_dist_num, random_state)
 
         # Initialize a portfolio
         self.portfolio = ts.Portfolio(self.y_data)
 
         # Define the dates when we need to retune hyperparameter or retrain model
         self.retune_hyperparam_dates, self.retrain_model_dates = find_dates(self.beg_date, self.end_date,
-                                                                                   self.y_data.copy())
+                                                                            self.y_data.copy())
 
-    def get_historical_data_for_given_date(self, trade_date):
-        # Select historical dates data
+    def get_historical_data_for_given_date(self, trade_date, num_hist_years=5):
+        # Select recent years historical dates data, num_hist_years given by parameter
         data_X = self.X_data.copy()
         data_y = self.y_data.copy()
-        data_X = data_X[data_X['evaluation_date'] < trade_date]
-        data_y = data_y[data_y['evaluation_date'] < trade_date]
+        # beg_date = str(int(trade_date[0:4])-num_hist_years) + '-01-01'
+        # beg_date = trade_date + pd.offsets.DateOffset(years=-num_hist_years)
+        beg_date = trade_date + pd.Timedelta(days=-365*num_hist_years)
+        data_X = data_X[(data_X['evaluation_date'] < trade_date) & (data_X['evaluation_date'] > beg_date)]
+        data_y = data_y[(data_y['evaluation_date'] < trade_date) & (data_X['evaluation_date'] > beg_date)]
         return data_X, data_y
 
     def get_the_most_updated_model(self, trade_date):
         # Get historical data & Drop the info columns
-        X_data, y_data = self.get_historical_data_for_given_date(trade_date)
+        X_data, y_data = self.get_historical_data_for_given_date(trade_date, num_hist_years=5)
 
         # Check if we need to retune hyperparameters
         if trade_date in self.retune_hyperparam_dates.values:
@@ -80,7 +80,7 @@ class BackTest:
         # Check if we need to retrain model today
         if trade_date in self.retrain_model_dates.values:
             print(f"retrain model for trade date {trade_date}")
-            self.model.model_training(X_data, y_data)
+            self.model.model_training(X_data, y_data, self.vix_data, higher_weight_factor=1.2)
 
     def make_prediction_for_trade_date(self, trade_date):
         print(f"making prediction for trade date {trade_date}")
@@ -128,45 +128,44 @@ class BackTest:
             self.portfolio.update_port_holdings(trade_date, selected_trades)
 
     def get_performance_results(self):
-        perf = pa.Performance(self.portfolio.port_holdings.copy())
+        perf = Performance(self.portfolio.port_holdings.copy())
 
         daily_returns = perf.port_daily_returns  # This gives daily return series
         monthly_returns = perf.calculate_monthly_returns()  # This gives monthly return series
         annual_returns = perf.calculate_annual_returns()  # This gives annual return series
         performance_summary = perf.annualized_risk_and_return()  # This gives performance over the backtesting period
 
-        # Save all the information to backtest_result folder
-        backtest_folder = Path('backtest_results') / Path(CONFIG.model)
-
         # Save all performance info
-        daily_returns.to_csv(backtest_folder / Path(f'daily_returns_{CONFIG.tag_for_current_run}.csv'))
-        monthly_returns.to_csv(backtest_folder / Path(f'monthly_returns_{CONFIG.tag_for_current_run}.csv'))
-        annual_returns.to_csv(backtest_folder / Path(f'annual_returns_{CONFIG.tag_for_current_run}.csv'))
-        performance_summary.to_csv(backtest_folder / Path(f'total_performance_{CONFIG.tag_for_current_run}.csv'))
+        daily_returns.to_csv(CONFIG.daily_returns_path)
+        monthly_returns.to_csv(CONFIG.monthly_returns_path)
+        annual_returns.to_csv(CONFIG.annual_returns_path)
+        performance_summary.to_csv(CONFIG.performance_summary_path)
 
         # Save Cumulative return plot
         fig = daily_returns.plot(x='effective_date', y='cum_return').get_figure()
-        fig.savefig(backtest_folder / Path(f'return_plot_{CONFIG.tag_for_current_run}.pdf'))
+        fig.savefig(CONFIG.return_plot_path)
 
         # Save portfolio holdings
-        port_holdings = self.portfolio.port_holdings  # This gives you the portfolio holdings
-        port_holdings.to_csv(backtest_folder / Path(f'port_holdings_{CONFIG.tag_for_current_run}.csv'))
+        self.portfolio.port_holdings.to_csv(CONFIG.portfolio_holdings_path)
 
 
 if __name__ == '__main__':
     # Record run time
     start_time = datetime.datetime.now()
 
-    # Read features & labels data
-    features, labels = mdl.read_features_label_data()
+    # Get features & labels data & VIX
+    y = pd.read_pickle(CONFIG.pairs_label_data_path)  # labels
+    X = pd.read_pickle(CONFIG.pairs_features_data_path)  # features
+    vix = pd.read_csv(CONFIG.vix_path)
 
     # Start Backtesting
-    back_test = BackTest(features,
-                         labels,
-                         beg_date='2003-01-01',
-                         end_date='2020-12-31',
-                         model_type=CONFIG.model,
-                         score_method='f1_macro',
+    back_test = BackTest(X_data=X,
+                         y_data=y,
+                         vix_data=vix,
+                         beg_date=CONFIG.beg_date,
+                         end_date=CONFIG.end_date,
+                         model_type=CONFIG.model_type,
+                         score_method=CONFIG.score_method,
                          param_dist_num=CONFIG.param_dist,
                          random_state=CONFIG.random_state_num
                          )
