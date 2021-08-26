@@ -2,6 +2,8 @@
     This file will act as a central parameters management
 """
 
+
+
 # 1. Original data: Params used to look up corresponding data
 num_years = 20
 # sectors_num = 4  # Original 2
@@ -53,6 +55,10 @@ tag_for_current_run = 'new_spread_test'
 
 
 # Data Path management:
+# 0. Other data
+vix_original_path = f'data/0_other_data/VIX_original.csv'
+vix_path = f'data/0_other_data/VIX.csv'
+
 # 1. Original Data
 cleaned_pkl_file_name = f'cleaned_data_{num_years}y_{sectors_num}sectors.pkl'
 cleaned_data_path = f'data/1_cleaned_data/{cleaned_pkl_file_name}'
@@ -67,13 +73,15 @@ cluster_data_path = f'data/3_asset_cluster/clusters_for_all_dates_{asset_cluster
 pairs_data_path = f'data/4_pairs_data/{coint_test_method}/pairs_for_all_days_{coint_test_method}.pkl'
 
 # 5. Spread Feature Engineering
-pairs_label_data_path = f'data/5_spread_features/{coint_test_method}/pairs_label_y_u{upper_threshold_factor}_d{lower_threshold_factor}.pkl'
-pairs_features_data_path = f'data/5_spread_features/{coint_test_method}/pairs_features_X_u{upper_threshold_factor}_d{lower_threshold_factor}.pkl'
+pairs_label_data_path = f'data/5_spread_features/{coint_test_method}/pairs_label_y_u{upper_threshold_factor}_' \
+                        f'd{lower_threshold_factor}.pkl'
+pairs_features_data_path = f'data/5_spread_features/{coint_test_method}/pairs_features_X_u{upper_threshold_factor}_' \
+                           f'd{lower_threshold_factor}.pkl'
 
 # 9. BackTest Performance Results
-daily_returns_path = f'data/9_backtest_results/daily_returns_{tag_for_current_run}.csv'
-monthly_returns_path = f'data/9_backtest_results/monthly_returns_{tag_for_current_run}.csv'
-annual_returns_path = f'data/9_backtest_results/annual_returns_{tag_for_current_run}.csv'
-performance_summary_path = f'data/9_backtest_results/total_performance_{tag_for_current_run}.csv'
-return_plot_path = f'data/9_backtest_results/return_plot_{tag_for_current_run}.pdf'
-portfolio_holdings_path = f'data/9_backtest_results/port_holdings_{tag_for_current_run}.pdf'
+daily_returns_path = f'data/9_backtest_results/{coint_test_method}/daily_returns_{tag_for_current_run}.csv'
+monthly_returns_path = f'data/9_backtest_results/{coint_test_method}/monthly_returns_{tag_for_current_run}.csv'
+annual_returns_path = f'data/9_backtest_results/{coint_test_method}/annual_returns_{tag_for_current_run}.csv'
+performance_summary_path = f'data/9_backtest_results/{coint_test_method}/total_performance_{tag_for_current_run}.csv'
+return_plot_path = f'data/9_backtest_results/{coint_test_method}/return_plot_{tag_for_current_run}.pdf'
+portfolio_holdings_path = f'data/9_backtest_results/{coint_test_method}/port_holdings_{tag_for_current_run}.pdf'
