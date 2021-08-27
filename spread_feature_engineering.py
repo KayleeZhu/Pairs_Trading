@@ -26,10 +26,11 @@ class SpreadFeature:
     # spread = adj_price diff between two stocks
     # spread return
 
-    def __init__(self, all_data, pairs):
+    def __init__(self, all_data, pairs, max_holding_period_days, target_return):
         self.all_data = all_data
         self.pairs = pairs
-        # TODO: added recession data here
+        self.max_holding_period_days = max_holding_period_days
+        self.target_return = target_return
         self.spread_return_feature = self.get_spread_features_for_pairs()
         self.X = self.get_all_features()
         self.y = pd.DataFrame()
@@ -99,7 +100,6 @@ class SpreadFeature:
             asset2_price_col = feature_name + '_t_' + str(i) + '_asset2'
             spread_col = 'spread_t_' + str(i)
             # data_with_pairs[spread_col] = data_with_pairs[asset1_price_col] - data_with_pairs[asset2_price_col]
-            # TODO: Calculate new spread, with asset weights - done
             data_with_pairs[spread_col] = data_with_pairs[asset1_price_col] * data_with_pairs['asset1_weight'] - \
                                           data_with_pairs[asset2_price_col] * data_with_pairs['asset1_weight']
             # selected_column.append(spread_col)
@@ -125,7 +125,6 @@ class SpreadFeature:
         Calculate 5, 10, 15, 20 ... 60d avg spread return & its std
         :return: {DataFrame} -- Paris' 5, 10, 15, 20 ... 60d avg spread return & its std feature
         """
-
         data_with_pairs = self.calculate_spread_return(shift_range)
 
         # Calculate spread return for 5, 10, 15, 20 days
@@ -148,13 +147,15 @@ class SpreadFeature:
         return data_with_pairs[selected_column].copy()
 
     def get_all_features(self):
+        print('start getting all features X')
         feature_one_asset = self.get_features_for_one_asset(feature_target_list=['return', 'current_eps',
                                                                                  'volume', 'dividend_yield'])
         spread_returns = self.get_spread_features_for_pairs(shift_range=60)
 
         # Add two helpful columns for CV
         feature_one_asset['prediction_date'] = feature_one_asset['date']
-        feature_one_asset['evaluation_date'] = feature_one_asset.groupby(['GVKEY'])['date'].shift(-5)
+        feature_one_asset['evaluation_date'] = feature_one_asset.groupby(['GVKEY'])['date'].shift(
+            -self.max_holding_period_days)
 
         # Attach pairs info
         data_with_pairs = feature_one_asset.merge(self.pairs, how='inner', left_on=["date", "GVKEY"],
@@ -171,10 +172,6 @@ class SpreadFeature:
                                             left_on=["date", "GVKEY_asset1", "GVKEY_asset2"],
                                             right_on=["date", "GVKEY_asset1", "GVKEY_asset2"])
 
-        # Drop the rows where 5d spread return is missing -- date >= 2020-12-24
-        last_date = datetime.datetime.strptime('2020-12-24', '%Y-%m-%d')
-        all_features = all_features[all_features['date'] < last_date]
-
         # Drop the rows where it has NA or inf values
         all_features = all_features.replace([np.inf, -np.inf], np.nan)
         all_features = all_features.dropna(how='any')
@@ -186,89 +183,95 @@ class SpreadFeature:
 
         # Sort by date
         all_features.sort_values(by=['prediction_date', 'GVKEY_asset1', 'GVKEY_asset2'], inplace=True)
-
         return all_features
 
-    def generate_label_y(self, upper_threshold_factor, lower_threshold_factor):
-        # Get spread_return_std_data
-        selected_column = ['date', 'GVKEY_asset1', 'GVKEY_asset2', 'spread_return_60d_std']
-        spread_return_std_data = self.spread_return_feature[selected_column].copy()
-
-        # Get future 5 day's adjusted price
-        features_columns = ['GVKEY', 'date', 'adjusted_price']
-        asset_data = self.all_data[features_columns].copy()
-        asset_data['adj_price_t1'] = asset_data.groupby(['GVKEY'])['adjusted_price'].shift(-1)
-        asset_data['adj_price_t2'] = asset_data.groupby(['GVKEY'])['adjusted_price'].shift(-2)
-        asset_data['adj_price_t3'] = asset_data.groupby(['GVKEY'])['adjusted_price'].shift(-3)
-        asset_data['adj_price_t4'] = asset_data.groupby(['GVKEY'])['adjusted_price'].shift(-4)
-        asset_data['adj_price_t5'] = asset_data.groupby(['GVKEY'])['adjusted_price'].shift(-5)
-
-        # Add two helpful columns for CV
-        asset_data['prediction_date'] = asset_data['date']
-        asset_data['evaluation_date'] = asset_data.groupby(['GVKEY'])['date'].shift(-5)
-
-        # Attach pairs info
-        data_with_pairs = asset_data.merge(self.pairs, how='inner', left_on=["date", "GVKEY"],
-                                           right_on=["training_date", "asset1_gvkey"])
-        # Attach second asset info
-        data_with_pairs = data_with_pairs.merge(asset_data, how='inner', left_on=["date", "asset2_gvkey"],
-                                                right_on=["date", "GVKEY"], suffixes=('_asset1', '_asset2'))
-
-        # Calculate spread & spread return from t0 - t5
-        # TODO: Recalculate spread by taking in to account of asset weights - see the data to confirm the weights join no issue
+    def get_returns_in_future_holding_period(self, data_with_pairs):
+        # Calculate spread & spread daily return & cumulative return for future max_holding_period
         data_with_pairs = data_with_pairs.eval(
             'spread_t0 = adjusted_price_asset1 * asset1_weight - adjusted_price_asset2 * asset2_weight')
-        for i in range(1, 6):
+
+        # Spread & Spread daily return
+        for i in range(1, self.max_holding_period_days + 1):
             price_1_col = 'adj_price_t' + str(i) + '_asset1'
             price_2_col = 'adj_price_t' + str(i) + '_asset2'
             spread_today = 'spread_t' + str(i)
             spread_yesterday = 'spread_t' + str(i - 1)
             spread_daily_return_col = 'spread_daily_return_d' + str(i)
-            # TODO: check the old name of spread_daily_return
-            # TODO: spread_t0 very diff than spread_t1 - t5
             # Calculate spread
-            # TODO: Recalculate spread by taking in to account of asset weights
             data_with_pairs[spread_today] = data_with_pairs[price_1_col] * data_with_pairs['asset1_weight'] - \
                                             data_with_pairs[price_2_col] * data_with_pairs['asset2_weight']
             # Calculate spread daily return
             data_with_pairs[spread_daily_return_col] = (data_with_pairs[spread_today] - data_with_pairs[
                 spread_yesterday]) / data_with_pairs[spread_yesterday].abs()
 
-        data_with_pairs = data_with_pairs.eval('spread_cum_return_3d = (spread_t3 - spread_t0) / abs(spread_t0)')
-        data_with_pairs = data_with_pairs.eval('spread_cum_return_4d = (spread_t4 - spread_t0) / abs(spread_t0)')
-        data_with_pairs = data_with_pairs.eval('spread_cum_return_5d = (spread_t5 - spread_t0) / abs(spread_t0)')
+        # Spread Cumulative return
+        for i in range(1, self.max_holding_period_days + 1):
+            spread_t_col = 'spread_t' + str(i)
+            cum_return_t_col = 'spread_cum_return_' + str(i) + 'd'
+            data_with_pairs[cum_return_t_col] = (data_with_pairs[spread_t_col] - data_with_pairs['spread_t0']) / abs(
+                data_with_pairs['spread_t0'])
+
+        return data_with_pairs
+
+    def triple_barrier(self, data_with_pairs):
+        """ generate labels using triple_barrier rules, return long & short mask
+            If in the future holding period, any date reaches the return target, then long today
+            If any date reaches the -return target, then short
+        """
+
+        # Initialize labels as 0
+        data_with_pairs['y'] = 0
+
+        # Generate labels using path dependent triple barrier rules
+        for i in range(1, self.max_holding_period_days + 1):
+            cum_return_t_col = 'spread_cum_return_' + str(i) + 'd'
+            zero_mask = data_with_pairs['y'] == 0
+            long_mask = data_with_pairs[cum_return_t_col] >= self.target_return  # At time t, if reach target then long
+            short_mask = data_with_pairs[cum_return_t_col] <= -self.target_return
+            data_with_pairs.loc[
+                (long_mask & zero_mask), 'y'] = 1  # only overwrites the prediction where it hasn't reached target
+            data_with_pairs.loc[(short_mask & zero_mask), 'y'] = -1
+
+        return data_with_pairs.copy()
+
+    def generate_label_y(self, upper_threshold_factor, lower_threshold_factor):
+        print('start generate_label_y')
+
+        # Get spread_return_std_data
+        selected_column = ['date', 'GVKEY_asset1', 'GVKEY_asset2', 'spread_return_60d_std']
+        spread_return_std_data = self.spread_return_feature[selected_column].copy()
+
+        # Get future daily adjusted price in future holding period days
+        features_columns = ['GVKEY', 'date', 'adjusted_price']
+        asset_data = self.all_data[features_columns].copy()
+        for i in range(0, self.max_holding_period_days + 1):
+            price_col = 'adj_price_t' + str(i)
+            asset_data[price_col] = asset_data.groupby(['GVKEY'])['adjusted_price'].shift(-i)
+        print('future adj price done')
+
+        # Add two helpful columns for CV
+        asset_data['prediction_date'] = asset_data['date']
+        asset_data['evaluation_date'] = asset_data.groupby(['GVKEY'])['date'].shift(-self.max_holding_period_days)
+
+        # Attach pairs info
+        data_with_pairs = asset_data.merge(self.pairs, how='inner', left_on=['date', 'GVKEY'],
+                                           right_on=['training_date', 'asset1_gvkey'])
+        # Attach second asset info
+        data_with_pairs = data_with_pairs.merge(asset_data, how='inner', left_on=['date', 'asset2_gvkey'],
+                                                right_on=['date', 'GVKEY'], suffixes=('_asset1', '_asset2'))
+
+        # Calculate spread & spread return for future holding period days
+        data_with_pairs = self.get_returns_in_future_holding_period(data_with_pairs)
+        print('future returns calculation done')
 
         # Attach the spread return std info
-        data_with_pairs = spread_return_std_data.merge(data_with_pairs.copy(), how='left',
-                                                       left_on=["date", "GVKEY_asset1", "GVKEY_asset2"],
-                                                       right_on=["date", "GVKEY_asset1", "GVKEY_asset2"])
+        data_with_pairs = spread_return_std_data.merge(data_with_pairs, how='left',
+                                                       left_on=['date', 'GVKEY_asset1', 'GVKEY_asset2'],
+                                                       right_on=['date', 'GVKEY_asset1', 'GVKEY_asset2'])
 
-        # Generate labels based on threshold
-        # Intuition: Assume today the spread is stable (that's why we didnt take action)
-        # In next 3 days if spread return is above threshold then long today, if lower than threshold then short
-        # TODO: what if spread goes up in d1, then went down in d3 --> will result in more prediction in -1
-        long_3d = data_with_pairs['spread_cum_return_3d'] > upper_threshold_factor * data_with_pairs[
-            'spread_return_60d_std']
-        long_4d = data_with_pairs['spread_cum_return_4d'] > upper_threshold_factor * data_with_pairs[
-            'spread_return_60d_std']
-        long_5d = data_with_pairs['spread_cum_return_5d'] > upper_threshold_factor * data_with_pairs[
-            'spread_return_60d_std']
-        long_mask = long_3d | long_4d | long_5d
-
-        # Short mask
-        short_3d = data_with_pairs['spread_cum_return_3d'] < -lower_threshold_factor * data_with_pairs[
-            'spread_return_60d_std']
-        short_4d = data_with_pairs['spread_cum_return_4d'] < -lower_threshold_factor * data_with_pairs[
-            'spread_return_60d_std']
-        short_5d = data_with_pairs['spread_cum_return_5d'] < -lower_threshold_factor * data_with_pairs[
-            'spread_return_60d_std']
-        # short_mask = short_3d | short_4d | short_5d
-        short_mask = short_5d
-
-        # Assign labels
-        data_with_pairs['y'] = 0
-        data_with_pairs.loc[long_mask, 'y'] = 1
-        data_with_pairs.loc[short_mask, 'y'] = -1
+        # Generate labels using path dependent triple barrier rules
+        data_with_pairs = self.triple_barrier(data_with_pairs)
+        print('triple barrier done')
 
         # Drop & Rename columns 
         # data_with_pairs = data_with_pairs.drop(columns=['training_date', 'asset1_gvkey', 'asset2_gvkey'])
@@ -288,6 +291,15 @@ class SpreadFeature:
         self.y = data_with_pairs.copy()
         return data_with_pairs
 
+    def check_X_y_dimensionality(self):
+        """
+        Make sure X & y has same dimensionality. If not, then overwrites it
+        """
+        if len(self.X) > len(self.y):  # if X longer, then only gets y's index
+            self.X = self.X.iloc[self.y.index].copy()
+        elif len(self.X) < len(self.y):
+            self.y = self.y.iloc[self.X.index].copy()
+
 
 if __name__ == '__main__':
     start_time = datetime.datetime.now()
@@ -298,9 +310,15 @@ if __name__ == '__main__':
     pairs_data = get_pairs_data(CONFIG.pairs_data_path)
 
     # Get spread features
-    spread_features = SpreadFeature(all_data=cleaned_data, pairs=pairs_data)
-    pairs_features = spread_features.generate_label_y(upper_threshold_factor=CONFIG.upper_threshold_factor,
-                                                      lower_threshold_factor=CONFIG.lower_threshold_factor)
+    spread_features = SpreadFeature(all_data=cleaned_data,
+                                    pairs=pairs_data,
+                                    max_holding_period_days=CONFIG.max_holding_period_days,
+                                    target_return=CONFIG.target_return
+                                    )
+    pairs_features = spread_features.generate_label_y(upper_threshold_factor=0.8,
+                                                      lower_threshold_factor=0.8
+                                                      )
+    spread_features.check_X_y_dimensionality()
 
     X = spread_features.X
     y = spread_features.y
@@ -316,14 +334,3 @@ if __name__ == '__main__':
     end_time = datetime.datetime.now()
     run_time = end_time - start_time
     print(f'{run_time.seconds} seconds')
-
-    # Methods testing:
-    # features = spread_features.get_features_for_one_asset(feature_target_list=['return', 'current_eps',
-    #                                                                            'volume', 'dividend_yield'])
-    #
-    # data_with_pairs_info = spread_features.get_spread_features_for_pairs()
-
-    # Test if generating features successfully
-    # pairs_features = spread_features.get_all_features()
-    # pairs_features.to_csv('pairs_test.csv')
-    # print(pairs_features)
