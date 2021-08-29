@@ -15,38 +15,41 @@ import spread_feature_engineering as spd
 import CONFIG
 
 
-def get_train_val_indices(data):
+def get_train_val_indices(data, lag=CONFIG.max_holding_period_days):
 
-    cv = kfoldcv.CombPurgedKFoldCV(n_splits=5, n_test_splits=1, embargo_td=pd.Timedelta(days=10))
+    cv = kfoldcv.CombPurgedKFoldCV(n_splits=5, n_test_splits=1, embargo_td=pd.Timedelta(days=lag+10))
     data = data.sort_values('prediction_date')
     fold_indices = list(cv.split(data, pred_times=data['prediction_date'], eval_times=data['evaluation_date']))
 
     return fold_indices
 
 
-def time_series_sample_weighting_vix(y_data, vix_data, higher_weight_factor=1.2):
+def time_series_sample_weighting_vix(y_data, vix_data, higher_weight_factor=1.2, weighted=True):
+    if weighted:
+        y_data['year'] = y_data['prediction_date'].dt.year
+        y_data['month'] = y_data['prediction_date'].dt.month
+        y_data = y_data.merge(vix_data, on=['year', 'month'], how='left')
 
-    y_data['year'] = y_data['prediction_date'].dt.year
-    y_data['month'] = y_data['prediction_date'].dt.month
-    y_data = y_data.merge(vix_data, on=['year', 'month'], how='left')
+        # Get VIX value of last month --> current_vix
+        last_month_list = y_data.groupby(['year', 'month'])['prediction_date'].unique().values[-1]
+        last_month_mask = y_data.prediction_date.isin(last_month_list)
+        current_vix = y_data[last_month_mask].vix.mean()
+        y_data['vix_diff'] = abs(y_data['vix'] - current_vix)
 
-    # Get VIX value of last month --> current_vix
-    last_month_list = y_data.groupby(['year', 'month'])['prediction_date'].unique().values[-1]
-    last_month_mask = y_data.prediction_date.isin(last_month_list)
-    current_vix = y_data[last_month_mask].vix.mean()
-    y_data['vix_diff'] = abs(y_data['vix'] - current_vix)
+        # Reassign sample weights
+        avg_weight = 1 / len(y_data)
+        mask = y_data['vix_diff'] <= y_data['vix_diff'].median()
 
-    # Reassign sample weights
-    avg_weight = 1 / len(y_data)
-    mask = y_data['vix_diff'] <= y_data['vix_diff'].median()
+        # Calculate the weight factor applied to avg weight, such that sum of sample weight = 1
+        similar_vix_len = len(y_data[mask])
+        dissimilar_vix_len_vix_len = len(y_data[~mask])
+        lower_weight_factor = (1 - higher_weight_factor) * similar_vix_len / dissimilar_vix_len_vix_len + 1
+        y_data['sample_weight'] = np.where(mask, avg_weight * higher_weight_factor, avg_weight * lower_weight_factor)
+        sample_weights = y_data['sample_weight'].sort_index()
+    else:
+        sample_weights = 1 / len(y_data)
 
-    # Calculate the weight factor applied to avg weight, such that sum of sample weight = 1
-    similar_vix_len = len(y_data[mask])
-    dissimilar_vix_len_vix_len = len(y_data[~mask])
-    lower_weight_factor = (1 - higher_weight_factor) * similar_vix_len / dissimilar_vix_len_vix_len + 1
-    y_data['sample_weight'] = np.where(mask, avg_weight * higher_weight_factor, avg_weight * lower_weight_factor)
-
-    return y_data['sample_weight'].sort_index()
+    return sample_weights
 
 
 def get_parameter_distribution(dict_num):
@@ -123,16 +126,17 @@ class ModelPipeline:
         cv.fit(X, y)
         self.pipeline = cv.best_estimator_
 
-    def model_training(self, X_data, y_data, vix_data, higher_weight_factor):
+    def model_training(self, X_data, y_data, vix_data, higher_weight_factor, weighted):
         # Get sample weights for model fitting
-        sample_weights = time_series_sample_weighting_vix(y_data, vix_data, higher_weight_factor)
+        sample_weights = time_series_sample_weighting_vix(y_data, vix_data, higher_weight_factor, weighted)
 
         # Drop non-features / non-labels columns
         X = self.get_features(X_data)
         y = self.get_labels(y_data)
 
         # Train the model
-        self.pipeline.fit(X, y, sample_weight=sample_weights)
+        kwargs = {self.pipeline.steps[-1][0] + '__sample_weight': sample_weights}
+        self.pipeline.fit(X, y, **kwargs)
 
     def get_prediction(self, X_data, y_data):
         # Drop non-features columns

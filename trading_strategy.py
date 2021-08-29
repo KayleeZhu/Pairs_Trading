@@ -30,7 +30,15 @@ class Portfolio:
                              'close_date',
                              'holding_period',
                              'direction',
+                             'adj_price1',  # New added col starts
+                             'adj_price2',
+                             'asset_weight1',  # The amount we need for asset 1 to make a pair
+                             'asset_weight2',
+                             'asset_position1',  # The actual # of unit we entered for the asset
+                             'asset_position2',
                              'spread_price',
+                             'txn_cost',
+                             'cash_flow',  # New added col ends
                              'spread_return',
                              'cum_spread_return',
                              'spread_return_60d_std',
@@ -72,7 +80,7 @@ class Portfolio:
         active_holdings_mask = self.port_holdings['is_active'] == 1
 
         # Take yesterday's active portfolio holdings
-        current_port = self.port_holdings.copy()[last_bus_day_mask & active_holdings_mask]
+        current_port = self.port_holdings[last_bus_day_mask & active_holdings_mask].copy()
 
         # Only update when there is holdings
         if len(current_port) != 0:
@@ -91,6 +99,7 @@ class Portfolio:
             self.port_holdings = self.port_holdings.append(current_port)
 
     def open_trade(self, selected_trades):
+        # TODO: open trade & exit trade --> put into Trading Strategy class
         # Add columns for selected_trades
         selected_trades['trade_id'] = selected_trades.index
         selected_trades['effective_date'] = selected_trades['open_date']
@@ -105,15 +114,15 @@ class Portfolio:
 
         self.port_holdings = self.port_holdings.append(selected_trades)
 
-    def close_trade(self, trade_date):
+    def close_trade(self, trade_date,
+                    max_holding_period_days=CONFIG.max_holding_period_days,
+                    target_return=CONFIG.target_return):
         active_holdings_mask = self.port_holdings['is_active'] == 1
         today_mask = self.port_holdings['effective_date'] == trade_date
         current_port = self.port_holdings.copy()[today_mask & active_holdings_mask]
 
         # Update the num_active_trades
         current_port['num_active_trades'] = len(current_port)
-
-        # Portfolio Constructions:
 
         # Update weight & contribution using num_active_trades
         current_port['weight'] = current_port['spread_price'].abs() / current_port[
@@ -126,20 +135,16 @@ class Portfolio:
 
         # Close out trades --> Fill up close date col and set is_active to 0
         # Stop Loss condition
-        # stop_loss_mask = current_port['cum_spread_return'] < -0.8 * current_port['spread_return_60d_std']
-        # current_port.loc[stop_loss_mask, ['close_date']] = trade_date
-        # current_port.loc[stop_loss_mask, ['is_active']] = 0
+        stop_loss_mask = current_port['cum_spread_return'] < -target_return
+        current_port.loc[stop_loss_mask, ['close_date']] = trade_date
+        current_port.loc[stop_loss_mask, ['is_active']] = 0
 
-        # Check at d3 if we get what the model predicts, if yes then exit trades
-        close_mask_3d = current_port['holding_period'] == 3
-        close_mask = current_port['cum_spread_return'] > 0.8 * current_port['spread_return_60d_std']
-        current_port.loc[close_mask_3d & close_mask, ['close_date']] = trade_date
-        current_port.loc[close_mask_3d & close_mask, ['is_active']] = 0
-
-        # Exit trade at d5 no matter what
-        close_mask_5d = current_port['holding_period'] == 5
-        current_port.loc[close_mask_5d, ['close_date']] = trade_date
-        current_port.loc[close_mask_5d, ['is_active']] = 0
+        for i in range(1, max_holding_period_days+1):
+            # Check at d3 if we get what the model predicts, if yes then exit trades
+            close_mask_t = current_port['holding_period'] == i
+            close_mask = current_port['cum_spread_return'] > target_return
+            current_port.loc[close_mask_t & close_mask, ['close_date']] = trade_date
+            current_port.loc[close_mask_t & close_mask, ['is_active']] = 0
 
         # Overwrite new data in port_holdings
         self.port_holdings.loc[today_mask & active_holdings_mask] = current_port
@@ -154,6 +159,9 @@ class Portfolio:
 
 
 if __name__ == '__main__':
-    features, labels = mdl.read_features_label_data()
+    # Get features & labels data
+    y = pd.read_pickle(CONFIG.pairs_label_data_path)  # labels
+    X = pd.read_pickle(CONFIG.pairs_features_data_path)  # features
+
     # Record run time
     start_time = datetime.datetime.now()

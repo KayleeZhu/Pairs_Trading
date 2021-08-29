@@ -2,6 +2,7 @@ import pandas as pd
 import datetime
 import numpy as np
 from pathlib import Path
+import os
 
 from model_training import ModelPipeline
 import trading_strategy as ts
@@ -34,7 +35,8 @@ def get_last_bus_date(data_y, today):
 
 class BackTest:
 
-    def __init__(self, X_data, y_data, vix_data, beg_date, end_date, model_type, score_method, param_dist_num, random_state):
+    def __init__(self, X_data, y_data, vix_data, beg_date, end_date, model_type, score_method,
+                 param_dist_num, random_state):
         self.beg_date = pd.Timestamp(beg_date)
         self.end_date = pd.Timestamp(end_date)
         self.model_type = model_type
@@ -57,30 +59,39 @@ class BackTest:
         self.retune_hyperparam_dates, self.retrain_model_dates = find_dates(self.beg_date, self.end_date,
                                                                             self.y_data.copy())
 
-    def get_historical_data_for_given_date(self, trade_date, num_hist_years=5):
+    def get_historical_data_for_given_date(self, trade_date, window_size_year=CONFIG.window_size_year):
         # Select recent years historical dates data, num_hist_years given by parameter
         data_X = self.X_data.copy()
         data_y = self.y_data.copy()
-        # beg_date = str(int(trade_date[0:4])-num_hist_years) + '-01-01'
-        # beg_date = trade_date + pd.offsets.DateOffset(years=-num_hist_years)
-        beg_date = trade_date + pd.Timedelta(days=-365*num_hist_years)
-        data_X = data_X[(data_X['evaluation_date'] < trade_date) & (data_X['evaluation_date'] > beg_date)]
-        data_y = data_y[(data_y['evaluation_date'] < trade_date) & (data_X['evaluation_date'] > beg_date)]
-        return data_X, data_y
+
+        # Select all historical data if no window size is provided
+        if window_size_year == 'all':
+            data_X = data_X[(data_X['evaluation_date'] < trade_date)]
+            data_y = data_y[(data_y['evaluation_date'] < trade_date)]
+        else:
+            beg_date = trade_date + pd.Timedelta(days=-365 * window_size_year)
+            data_X = data_X[(data_X['evaluation_date'] < trade_date) & (data_X['evaluation_date'] >= beg_date)]
+            data_y = data_y[(data_y['evaluation_date'] < trade_date) & (data_X['evaluation_date'] >= beg_date)]
+
+        return data_X, data_y, data_X['evaluation_date'].min(), data_X['evaluation_date'].max()
 
     def get_the_most_updated_model(self, trade_date):
         # Get historical data & Drop the info columns
-        X_data, y_data = self.get_historical_data_for_given_date(trade_date, num_hist_years=5)
-
+        X_data, y_data, beg_date, end_date = self.get_historical_data_for_given_date(trade_date,
+                                                                                     window_size_year=CONFIG.window_size_year)
         # Check if we need to retune hyperparameters
         if trade_date in self.retune_hyperparam_dates.values:
             print(f"hyperparam retuning for trade date {trade_date}")
+            print(f'Training data range from {beg_date} to {end_date}')
             self.model.hyperparameter_tunning(X_data, y_data)
 
         # Check if we need to retrain model today
         if trade_date in self.retrain_model_dates.values:
             print(f"retrain model for trade date {trade_date}")
-            self.model.model_training(X_data, y_data, self.vix_data, higher_weight_factor=1.2)
+            print(f'Training data range from {beg_date} to {end_date}')
+            self.model.model_training(X_data, y_data, self.vix_data,
+                                      higher_weight_factor=CONFIG.higher_weight_factor,
+                                      weighted=CONFIG.sample_weighted)
 
     def make_prediction_for_trade_date(self, trade_date):
         print(f"making prediction for trade date {trade_date}")
@@ -152,6 +163,16 @@ class BackTest:
 if __name__ == '__main__':
     # Record run time
     start_time = datetime.datetime.now()
+
+    # Create folder to save all files, skip if the folder already exists
+    try:
+        os.makedirs(CONFIG.current_run_folder)
+        print(f'Folder {CONFIG.current_run_folder} created')
+    except FileExistsError:
+        print(f'Folder {CONFIG.current_run_folder} already exists')
+
+    # Save info / params for current run
+    CONFIG.current_run_info_df.to_csv(CONFIG.current_run_info_path)
 
     # Get features & labels data & VIX
     y = pd.read_pickle(CONFIG.pairs_label_data_path)  # labels

@@ -101,14 +101,16 @@ if __name__ == '__main__':
     # Get PCA features for clustering from data folder
     pca_results = pd.read_pickle(f'data/2_pca_features/pca_features.pkl')
 
-    # Clustering
+    # Clustering for one day
     # asset_cluster = Cluster(training_date='2020-12-31', pca_features=pca_results)
     # asset_cluster = asset_cluster.optics()
 
     # Generated asset cluster for all dates
-    training_freq = 'daily'
-    clusters_for_all_dates = generate_cluster_for_all_dates(beg_date='2000-01-04', end_date='2020-12-31',
-                                                            pca_features=pca_results, retrain_freq=training_freq)
+    training_freq = CONFIG.asset_cluster_training_freq
+    clusters_for_all_dates = generate_cluster_for_all_dates(beg_date='2000-01-04',
+                                                            end_date='2020-12-31',
+                                                            pca_features=pca_results,
+                                                            retrain_freq=training_freq)
     clusters_for_all_dates.to_pickle(f'data/3_asset_cluster/clusters_for_all_dates_{training_freq}.pkl')
 
     # Run time

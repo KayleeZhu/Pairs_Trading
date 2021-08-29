@@ -1,5 +1,6 @@
 import pandas as pd
 from pathlib import Path
+import os
 import numpy as np
 import datetime
 
@@ -304,6 +305,16 @@ class SpreadFeature:
 if __name__ == '__main__':
     start_time = datetime.datetime.now()
     print("start generating spread features and labels")
+
+    # Create folder to save all files, skip if the folder already exists
+    try:
+        os.makedirs(CONFIG.spread_folder)
+        print(f'Folder {CONFIG.spread_folder} created')
+    except FileExistsError:
+        print(f'Folder {CONFIG.spread_folder} already exists')
+
+    # Save info / params for current run
+    CONFIG.current_run_info_df.to_csv(CONFIG.spread_folder)
 
     # Get cleaned data & pairs data
     cleaned_data = pd.read_pickle(CONFIG.cleaned_data_path)

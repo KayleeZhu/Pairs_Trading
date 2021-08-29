@@ -108,7 +108,9 @@ if __name__ == '__main__':
 
     # Parameters Control:
     feature_list = ['return', 'cum_return', 'volume', 'current_eps', 'dividend_yield']
-    pca_results, explained_ratio = generate_pca_features_for_clustering(data=df, num_components=4, historical_days=20,
+    pca_results, explained_ratio = generate_pca_features_for_clustering(data=df,
+                                                                        num_components=4,
+                                                                        historical_days=20,
                                                                         features_list=feature_list)
 
     pca_results.to_pickle(f'data/2_pca_features/pca_features.pkl')

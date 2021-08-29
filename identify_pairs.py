@@ -206,24 +206,21 @@ def get_pairs_for_all_days(trading_date_beg, trading_date_end, all_data, cluster
 
 if __name__ == '__main__':
 
-    # Get cleaned data
-    data_path = Path(f'data/1_cleaned_data/{CONFIG.cleaned_pkl_file_name}')
-    cleaned_data = pd.read_pickle(data_path)
+    # Get cleaned data & cluster data
+    cleaned_data = pd.read_pickle(CONFIG.cleaned_data_path)
+    clusters_for_all_dates = pd.read_pickle(CONFIG.cluster_data_path)
 
-    # Get asset cluster for all dates data
-    training_freq = 'daily'
-    # training_freq = 'monthly'
-    clusters_for_all_dates = pd.read_pickle(f'data/3_asset_cluster/clusters_for_all_dates_{training_freq}.pkl')
+    # Get test method from CONFIG file
+    test_method = CONFIG.coint_test_method
 
     # Get pairs data for one day
     pairs_of_the_day = get_pairs_for_one_trading_day(all_data=cleaned_data, cluster_data=clusters_for_all_dates,
                                                      num_historical_days=150, significance_level=0.05,
-                                                     trading_date='2001-01-04', coint_test_method='johansen')
+                                                     trading_date='2001-01-04', coint_test_method=test_method)
     print(pairs_of_the_day)
 
     # Get pairs for all days, run by year
     pairs_list = []
-    test_method = CONFIG.coint_test_method
     for year in np.arange(2001, 2021, 1):
         print(f'Getting pairs for year {year}')
         start_time = datetime.datetime.now()
@@ -235,7 +232,7 @@ if __name__ == '__main__':
                                            num_historical_days=182, significance_level=0.05,
                                            coint_test_method=test_method)
         # # Save all pairs data to pkl
-        all_pairs.to_pickle(f'data/4_pairs_data/pairs_for_all_days_{year}_{test_method}.pkl')
+        all_pairs.to_pickle(f'data/4_pairs_data/{test_method}/pairs_for_all_days_{year}_{test_method}.pkl')
         pairs_list.append(all_pairs)
 
         # Record run time
@@ -244,5 +241,5 @@ if __name__ == '__main__':
         print(f'{run_time.seconds} seconds')
 
     # Concat all years' pairs data into one
-    pairs_data_for_all_years = pd.concat(pairs_list, axis=1)
-    pairs_data_for_all_years.to_pickle(f'data/4_pairs_data/pairs_for_all_days_{test_method}.pkl')
+    pairs_data_for_all_years = pd.concat(pairs_list, axis=0)
+    pairs_data_for_all_years.to_pickle(f'data/4_pairs_data/{test_method}/pairs_for_all_days_{test_method}.pkl')
